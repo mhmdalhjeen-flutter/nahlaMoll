@@ -3,6 +3,22 @@ import type { ApiResponse } from './types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
+/** Strip accidental HTTP method prefixes and duplicate /api segments from paths. */
+function normalizeApiPath(url: string): string {
+  let path = url.trim().replace(/^(GET|POST|PUT|PATCH|DELETE)\s+/i, '');
+  if (/^https?:\/\//i.test(path)) {
+    try {
+      path = new URL(path).pathname;
+    } catch {
+      // keep path as-is if URL parsing fails
+    }
+  }
+  if (API_URL.replace(/\/$/, '').endsWith('/api') && path.startsWith('/api/')) {
+    path = path.slice(4);
+  }
+  return path.startsWith('/') ? path : `/${path}`;
+}
+
 export const apiClient = axios.create({
   baseURL: API_URL,
   headers: { 'Content-Type': 'application/json' },
@@ -16,6 +32,8 @@ function getTokens() {
     refresh: localStorage.getItem('refreshToken'),
   };
 }
+
+export { getTokens };
 
 export function setTokens(accessToken: string, refreshToken: string) {
   localStorage.setItem('accessToken', accessToken);
@@ -67,8 +85,14 @@ apiClient.interceptors.response.use(
         original.headers.Authorization = `Bearer ${newToken}`;
         return apiClient(original);
       }
+      clearTokens();
+      const { useAuthStore } = await import('@/stores/auth-store');
+      useAuthStore.getState().logout();
       if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/auth')) {
-        window.location.href = '/auth/login';
+        const { openAuthSheetForPageAccess } = await import('@/stores/pending-auth-store');
+        openAuthSheetForPageAccess(
+          `${window.location.pathname}${window.location.search}`,
+        );
       }
     }
     return Promise.reject(error);
@@ -76,29 +100,34 @@ apiClient.interceptors.response.use(
 );
 
 export async function apiGet<T>(url: string, params?: Record<string, unknown>): Promise<T> {
-  const res = await apiClient.get<ApiResponse<T>>(url, { params });
+  const res = await apiClient.get<ApiResponse<T>>(normalizeApiPath(url), { params });
   return res.data.data;
 }
 
 export async function apiPost<T>(url: string, body?: unknown): Promise<T> {
-  const res = await apiClient.post<ApiResponse<T>>(url, body);
+  const res = await apiClient.post<ApiResponse<T>>(normalizeApiPath(url), body);
   return res.data.data;
 }
 
 export async function apiPut<T>(url: string, body?: unknown): Promise<T> {
-  const res = await apiClient.put<ApiResponse<T>>(url, body);
+  const res = await apiClient.put<ApiResponse<T>>(normalizeApiPath(url), body);
+  return res.data.data;
+}
+
+export async function apiPatch<T>(url: string, body?: unknown): Promise<T> {
+  const res = await apiClient.patch<ApiResponse<T>>(normalizeApiPath(url), body);
   return res.data.data;
 }
 
 export async function apiDelete<T>(url: string): Promise<T> {
-  const res = await apiClient.delete<ApiResponse<T>>(url);
+  const res = await apiClient.delete<ApiResponse<T>>(normalizeApiPath(url));
   return res.data.data;
 }
 
 export async function apiUpload<T>(url: string, file: File): Promise<T> {
   const form = new FormData();
   form.append('file', file);
-  const res = await apiClient.post<ApiResponse<T>>(url, form, {
+  const res = await apiClient.post<ApiResponse<T>>(normalizeApiPath(url), form, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
   return res.data.data;

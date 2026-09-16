@@ -34,7 +34,7 @@ describe("UploadService", () => {
             get: jest.fn((key: string, defaultValue?: string) => {
               if (key === "MAX_FILE_SIZE") return "5242880";
               if (key === "ALLOWED_IMAGE_TYPES") {
-                return "image/jpeg,image/png,image/webp";
+                return "image/jpeg,image/png,image/webp,image/gif";
               }
               return defaultValue;
             }),
@@ -95,6 +95,30 @@ describe("UploadService", () => {
       "user-1",
     );
     expect(result.url).toContain("/uploads/");
+  });
+
+  it("accepts GIF uploads", async () => {
+    mockStorage.save.mockResolvedValue({
+      key: "jaka/products/abc.gif",
+      url: "https://res.cloudinary.com/drojump6/image/upload/v1/jaka/products/abc.gif",
+      originalName: "anim.gif",
+      mimeType: "image/gif",
+      size: 2048,
+    });
+
+    const gifFile: Express.Multer.File = {
+      ...validFile,
+      originalname: "anim.gif",
+      mimetype: "image/gif",
+    };
+
+    const result = await service.uploadImage(
+      gifFile,
+      UploadCategory.PRODUCT_IMAGE,
+    );
+
+    expect(result.url).toContain("drojump6");
+    expect(result.url).toContain(".gif");
   });
 
   it("rejects path traversal on delete", async () => {

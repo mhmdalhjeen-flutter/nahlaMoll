@@ -12,13 +12,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const { isAuthenticated, setAuth } = useAdminAuth();
+  const { isAuthenticated, isInitialized, setAuth } = useAdminAuth();
   const router = useRouter();
   const toast = useToast((s) => s.show);
 
   useEffect(() => {
+    if (!isInitialized) return;
     if (isAuthenticated) router.replace('/dashboard');
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, isInitialized, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,6 +38,14 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  if (!isInitialized) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="skeleton h-8 w-48" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">

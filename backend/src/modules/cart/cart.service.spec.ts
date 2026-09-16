@@ -3,6 +3,7 @@ import { Prisma, ProductAvailability } from "@prisma/client";
 import { CartService } from "./cart.service";
 import { ProductsService } from "../products/products.service";
 import { DeliveryService } from "../delivery/delivery.service";
+import { CustomerEventsService } from "../customer-events/customer-events.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { createMockPrismaService } from "../prisma/prisma.service.mock";
 import {
@@ -44,6 +45,10 @@ describe("CartService", () => {
           },
         },
         { provide: PrismaService, useValue: mockPrisma },
+        {
+          provide: CustomerEventsService,
+          useValue: { recordInternal: jest.fn() },
+        },
       ],
     }).compile();
 

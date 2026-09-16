@@ -9,6 +9,7 @@ import { OrdersService } from "./orders.service";
 import { CartService } from "../cart/cart.service";
 import { DeliveryService } from "../delivery/delivery.service";
 import { SettingsService } from "../settings/settings.service";
+import { CustomerEventsService } from "../customer-events/customer-events.service";
 import { ProductsService } from "../products/products.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { createMockPrismaService } from "../prisma/prisma.service.mock";
@@ -91,6 +92,10 @@ describe("OrdersService", () => {
           },
         },
         { provide: PrismaService, useValue: mockPrisma },
+        {
+          provide: CustomerEventsService,
+          useValue: { recordInternal: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -219,6 +224,7 @@ describe("OrdersService", () => {
       expect(result.deliveryFee).toEqual(new Prisma.Decimal(0));
       expect(result.total).toEqual(new Prisma.Decimal(250));
       expect(result.deliveryAddress).toBe("شارع الرئيسي");
+      expect(result.orderNumber).toBe("10001");
 
       expect(mockPrisma.product.updateMany).toHaveBeenCalledWith({
         where: {
@@ -234,6 +240,7 @@ describe("OrdersService", () => {
       expect(mockPrisma.order.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
+            orderNumber: "10001",
             customerId: userId,
             items: {
               create: expect.arrayContaining([
@@ -348,6 +355,38 @@ describe("OrdersService", () => {
               ],
             },
           }),
+        }),
+      );
+    });
+  });
+
+  describe("generateOrderNumber", () => {
+    it("uses database sequence for simple numeric order numbers", async () => {
+      setupDeliveryMocks(10, 0);
+      mockCart([
+        {
+          id: "cart-1",
+          userId,
+          productId: unlimitedProduct.id,
+          quantity: 1,
+          variantId: null,
+          product: unlimitedProduct,
+          variant: null,
+        },
+      ]);
+      mockPrisma.order.create.mockImplementation(({ data }) =>
+        Promise.resolve({ id: "order-seq", ...data, items: [], deliveryArea }),
+      );
+
+      await service.create(userId, {
+        deliveryAreaId: areaId,
+        deliveryAddress: "شارع الرئيسي",
+      });
+
+      expect(mockPrisma.$queryRaw).toHaveBeenCalled();
+      expect(mockPrisma.order.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ orderNumber: "10001" }),
         }),
       );
     });
@@ -480,6 +519,107 @@ describe("OrdersService", () => {
       await expect(service.verifyPaymentAdmin("order-1", {})).rejects.toThrow(
         ValidationException,
       );
+    });
+  });
+
+  describe("cancel and delete", () => {
+    it("customer can cancel a pending order", async () => {
+      mockPrisma.order.findFirst.mockResolvedValue({
+        id: "order-1",
+        customerId: userId,
+        status: OrderStatus.PENDING,
+        paymentStatus: PaymentStatus.PENDING,
+        paymentReference: null,
+      });
+      mockPrisma.order.update.mockResolvedValue({
+        id: "order-1",
+        status: OrderStatus.CANCELLED,
+      });
+
+      const result = await service.cancelForCustomer(userId, "order-1");
+      expect(result.status).toBe(OrderStatus.CANCELLED);
+    });
+
+    it("customer cannot cancel a shipped order", async () => {
+      mockPrisma.order.findFirst.mockResolvedValue({
+        id: "order-1",
+        customerId: userId,
+        status: OrderStatus.SHIPPED,
+      });
+
+      await expect(
+        service.cancelForCustomer(userId, "order-1"),
+      ).rejects.toThrow(ValidationException);
+    });
+
+    it("customer can delete a delivered order", async () => {
+      mockPrisma.order.findFirst.mockResolvedValue({
+        id: "order-1",
+        customerId: userId,
+        status: OrderStatus.DELIVERED,
+      });
+      mockPrisma.order.delete.mockResolvedValue({ id: "order-1" });
+
+      const result = await service.deleteForCustomer(userId, "order-1");
+      expect(result.deleted).toBe(true);
+    });
+  });
+
+  describe("updateStatusAdmin", () => {
+    it("marks COD payment verified when delivered", async () => {
+      mockPrisma.order.findUnique.mockResolvedValue({
+        id: "order-1",
+        status: OrderStatus.SHIPPED,
+        paymentStatus: PaymentStatus.PENDING,
+        paymentReference: null,
+      });
+      mockPrisma.order.update.mockResolvedValue({
+        id: "order-1",
+        status: OrderStatus.DELIVERED,
+        paymentStatus: PaymentStatus.VERIFIED,
+      });
+
+      const result = await service.updateStatusAdmin("order-1", {
+        status: OrderStatus.DELIVERED,
+      });
+
+      expect(mockPrisma.order.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: OrderStatus.DELIVERED,
+            paymentStatus: PaymentStatus.VERIFIED,
+          }),
+        }),
+      );
+      expect(result.paymentStatus).toBe(PaymentStatus.VERIFIED);
+    });
+
+    it("does not auto-verify electronic payment on deliver", async () => {
+      mockPrisma.order.findUnique.mockResolvedValue({
+        id: "order-1",
+        status: OrderStatus.SHIPPED,
+        paymentStatus: PaymentStatus.SUBMITTED,
+        paymentReference: "Ahmed",
+      });
+      mockPrisma.order.update.mockResolvedValue({
+        id: "order-1",
+        status: OrderStatus.DELIVERED,
+        paymentStatus: PaymentStatus.SUBMITTED,
+      });
+
+      await service.updateStatusAdmin("order-1", {
+        status: OrderStatus.DELIVERED,
+      });
+
+      expect(mockPrisma.order.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: OrderStatus.DELIVERED,
+          }),
+        }),
+      );
+      const updateCall = mockPrisma.order.update.mock.calls[0][0];
+      expect(updateCall.data.paymentStatus).toBeUndefined();
     });
   });
 });

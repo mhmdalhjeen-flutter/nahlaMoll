@@ -14,14 +14,25 @@ export class ReviewsService {
     private productsService: ProductsService,
   ) {}
 
-  async findByProduct(productId: string) {
-    return this.prisma.review.findMany({
-      where: { productId },
-      include: {
-        user: { select: { id: true, name: true, phoneNumber: true } },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+  async findByProduct(productId: string, page = 1, limit = 20) {
+    const pageSize = Math.min(Math.max(limit, 1), 50);
+    const skip = (Math.max(page, 1) - 1) * pageSize;
+    const where = { productId };
+
+    const [items, total] = await Promise.all([
+      this.prisma.review.findMany({
+        where,
+        include: {
+          user: { select: { id: true, name: true, phoneNumber: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: pageSize,
+      }),
+      this.prisma.review.count({ where }),
+    ]);
+
+    return { items, total, page: Math.max(page, 1), pageSize };
   }
 
   async findAllAdmin() {

@@ -96,4 +96,29 @@ export class UpdateSettingsDto {
   @IsOptional()
   @IsString()
   paymentAccountDetailsEn?: string;
+
+  @ApiPropertyOptional({ description: "Cash on delivery enabled" })
+  @IsOptional()
+  @IsBoolean()
+  codEnabled?: boolean;
+
+  @ApiPropertyOptional({ description: "COD customer note" })
+  @IsOptional()
+  @IsString()
+  codNote?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  bankOfPalestineEnabled?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  palPayEnabled?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  jawwalPayEnabled?: boolean;
 }

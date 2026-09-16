@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -6,6 +15,7 @@ import { UserRole } from "../users/enums/user-role.enum";
 import { OrdersService } from "./orders.service";
 import { CreateOrderDto } from "./dtos/create-order.dto";
 import { SubmitPaymentDto } from "./dtos/submit-payment.dto";
+import { OrdersQueryDto } from "./dtos/orders-query.dto";
 
 @ApiTags("orders")
 @ApiBearerAuth()
@@ -20,8 +30,12 @@ export class OrdersController {
   }
 
   @Get()
-  findAll(@CurrentUser("id") userId: string) {
-    return this.ordersService.findAllForCustomer(userId);
+  findAll(@CurrentUser("id") userId: string, @Query() query: OrdersQueryDto) {
+    return this.ordersService.findAllForCustomer(
+      userId,
+      query.page,
+      query.limit,
+    );
   }
 
   @Get(":id")
@@ -36,5 +50,15 @@ export class OrdersController {
     @Body() dto: SubmitPaymentDto,
   ) {
     return this.ordersService.submitPayment(userId, orderId, dto);
+  }
+
+  @Post(":id/cancel")
+  cancel(@CurrentUser("id") userId: string, @Param("id") orderId: string) {
+    return this.ordersService.cancelForCustomer(userId, orderId);
+  }
+
+  @Delete(":id")
+  remove(@CurrentUser("id") userId: string, @Param("id") orderId: string) {
+    return this.ordersService.deleteForCustomer(userId, orderId);
   }
 }

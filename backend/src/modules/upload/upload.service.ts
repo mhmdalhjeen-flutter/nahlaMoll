@@ -8,7 +8,7 @@ import {
 } from "./storage/storage.interface";
 import { ValidationException } from "../../common/exceptions/business.exception";
 
-const ALLOWED_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+const ALLOWED_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
 
 @Injectable()
 export class UploadService {
@@ -25,7 +25,7 @@ export class UploadService {
     );
     const allowed = this.configService.get<string>(
       "ALLOWED_IMAGE_TYPES",
-      "image/jpeg,image/png,image/webp",
+      "image/jpeg,image/png,image/webp,image/gif",
     );
     this.allowedMimeTypes = new Set(
       allowed.split(",").map((type) => type.trim()),

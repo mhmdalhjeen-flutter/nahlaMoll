@@ -9,6 +9,12 @@ export class DeliveryController {
   constructor(private readonly deliveryService: DeliveryService) {}
 
   @Public()
+  @Get("regions")
+  getGeographicRegions() {
+    return this.deliveryService.getGeographicRegions();
+  }
+
+  @Public()
   @Get("areas")
   async getDeliveryAreas() {
     return this.deliveryService.getActiveAreas();

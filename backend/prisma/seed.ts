@@ -50,33 +50,54 @@ async function main() {
       storeName: 'متجر إلكتروني',
       storeNameEn: 'Online Store',
       isStoreOpen: true,
-      freeDeliveryTarget: new Prisma.Decimal(10),
+      freeDeliveryTarget: new Prisma.Decimal(100),
       partialFreeDeliveryEnabled: false,
-      partialFreeDeliveryThreshold: new Prisma.Decimal(5),
-      partialFreeDeliveryDiscount: 50,
+      partialFreeDeliveryThreshold: new Prisma.Decimal(0),
+      partialFreeDeliveryDiscount: 0,
       paymentInstructions: 'يرجى التحويل إلى الحساب التالي وإرسال صورة الإيصال',
       paymentAccountDetails: 'يرجى تحديث تفاصيل الحساب من لوحة الإدارة',
     },
   });
 
   const deliveryAreas = [
-    { name: 'رفديا', deliveryFee: 15, eligibleForFreeDelivery: true },
-    { name: 'المنطقة الجنوبية', deliveryFee: 20, eligibleForFreeDelivery: true },
-    { name: 'المنطقة الشمالية', deliveryFee: 10, eligibleForFreeDelivery: true },
-    { name: 'منطقة بعيدة', deliveryFee: 25, eligibleForFreeDelivery: false },
+    {
+      name: 'رفديا',
+      deliveryFee: 15,
+      eligibleForFreeDelivery: true,
+      region: 'GAZA' as const,
+    },
+    {
+      name: 'المنطقة الجنوبية',
+      deliveryFee: 20,
+      eligibleForFreeDelivery: true,
+      region: 'SOUTH' as const,
+    },
+    {
+      name: 'المنطقة الشمالية',
+      deliveryFee: 10,
+      eligibleForFreeDelivery: true,
+      region: 'NORTH' as const,
+    },
+    {
+      name: 'منطقة بعيدة',
+      deliveryFee: 25,
+      eligibleForFreeDelivery: false,
+      region: null,
+    },
   ];
 
   for (const area of deliveryAreas) {
     const id = `area-${area.name}`;
     await prisma.deliveryArea.upsert({
       where: { id },
-      update: {},
+      update: { region: area.region },
       create: {
         id,
         name: area.name,
         deliveryFee: new Prisma.Decimal(area.deliveryFee),
         eligibleForFreeDelivery: area.eligibleForFreeDelivery,
         isActive: true,
+        region: area.region,
       },
     });
   }

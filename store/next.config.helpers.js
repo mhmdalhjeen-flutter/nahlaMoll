@@ -63,6 +63,12 @@ function getImageRemotePatterns() {
     });
   }
 
+  patterns.push({
+    protocol: 'https',
+    hostname: 'res.cloudinary.com',
+    pathname: '/**',
+  });
+
   return patterns;
 }
 

@@ -8,7 +8,7 @@ export const apiClient = axios.create({
   withCredentials: true,
 });
 
-function getTokens() {
+export function getAdminTokens() {
   if (typeof window === 'undefined') return { access: null, refresh: null };
   return {
     access: localStorage.getItem('adminAccessToken'),
@@ -27,7 +27,7 @@ export function clearAdminTokens() {
 }
 
 apiClient.interceptors.request.use((config) => {
-  const { access } = getTokens();
+  const { access } = getAdminTokens();
   if (access) config.headers.Authorization = `Bearer ${access}`;
   return config;
 });
@@ -40,7 +40,7 @@ apiClient.interceptors.response.use(
     const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
     if (error.response?.status === 401 && original && !original._retry) {
       original._retry = true;
-      const { refresh } = getTokens();
+      const { refresh } = getAdminTokens();
       if (refresh) {
         refreshPromise = refreshPromise ?? axios
           .post(`${API_URL}/auth/refresh`, { refreshToken: refresh })
@@ -60,6 +60,9 @@ apiClient.interceptors.response.use(
           return apiClient(original);
         }
       }
+      clearAdminTokens();
+      const { useAdminAuth } = await import('@/stores/auth-store');
+      useAdminAuth.getState().logout();
       if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
         window.location.href = '/login';
       }

@@ -1,10 +1,19 @@
 import { Injectable } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { DeliveryAreaType, DeliveryRegion, Prisma } from "@prisma/client";
+import { DELIVERY_REGIONS } from "./delivery-regions.constants";
 import { PrismaService } from "../prisma/prisma.service";
 import { SettingsService } from "../settings/settings.service";
-import { ResourceNotFoundException } from "../../common/exceptions/business.exception";
+import {
+  ResourceNotFoundException,
+  ValidationException,
+} from "../../common/exceptions/business.exception";
 import { CreateDeliveryAreaDto } from "./dtos/create-delivery-area.dto";
 import { UpdateDeliveryAreaDto } from "./dtos/update-delivery-area.dto";
+import { resolveFreeDeliveryContribution } from "../../common/utils/product-free-delivery.util";
+import {
+  FREE_DELIVERY_ELIGIBILITY_THRESHOLD,
+  FREE_DELIVERY_PROGRESS_TARGET,
+} from "./delivery.constants";
 
 export interface FreeDeliveryCalculation {
   actualScore: number;
@@ -23,13 +32,6 @@ export interface FreeDeliveryCalculation {
   remainingScore: number;
 }
 
-interface DeliverySettings {
-  freeDeliveryTarget: Prisma.Decimal | number | string;
-  partialFreeDeliveryEnabled: boolean;
-  partialFreeDeliveryThreshold: Prisma.Decimal | number | string;
-  partialFreeDeliveryDiscount: number;
-}
-
 @Injectable()
 export class DeliveryService {
   constructor(
@@ -40,12 +42,14 @@ export class DeliveryService {
   async getActiveAreas() {
     return this.prisma.deliveryArea.findMany({
       where: { isActive: true },
-      orderBy: { name: "asc" },
+      orderBy: [{ parentId: "asc" }, { name: "asc" }],
     });
   }
 
   async getAllAreas() {
-    return this.prisma.deliveryArea.findMany({ orderBy: { name: "asc" } });
+    return this.prisma.deliveryArea.findMany({
+      orderBy: [{ parentId: "asc" }, { name: "asc" }],
+    });
   }
 
   async getAreaById(id: string) {
@@ -58,7 +62,19 @@ export class DeliveryService {
     });
   }
 
+  getGeographicRegions() {
+    return DELIVERY_REGIONS;
+  }
+
   async create(dto: CreateDeliveryAreaDto) {
+    const areaType = dto.areaType ?? DeliveryAreaType.MAIN;
+    await this.validateAreaHierarchy(
+      areaType,
+      dto.parentId,
+      undefined,
+      dto.region,
+    );
+
     return this.prisma.deliveryArea.create({
       data: {
         name: dto.name,
@@ -66,15 +82,42 @@ export class DeliveryService {
         deliveryFee: new Prisma.Decimal(dto.deliveryFee),
         eligibleForFreeDelivery: dto.eligibleForFreeDelivery ?? true,
         isActive: dto.isActive ?? true,
+        areaType,
+        region:
+          areaType === DeliveryAreaType.MAIN ? (dto.region ?? null) : null,
+        parentId: dto.parentId ?? null,
       },
     });
   }
 
   async update(id: string, dto: UpdateDeliveryAreaDto) {
-    await this.requireArea(id);
-    const data: any = { ...dto };
+    const existing = await this.requireArea(id);
+    const nextType = dto.areaType ?? existing.areaType;
+    const nextParentId =
+      dto.parentId !== undefined ? dto.parentId : existing.parentId;
+
+    const nextRegion = dto.region !== undefined ? dto.region : existing.region;
+
+    await this.validateAreaHierarchy(nextType, nextParentId, id, nextRegion);
+
+    const data: Prisma.DeliveryAreaUpdateInput = {};
+    if (dto.name !== undefined) data.name = dto.name;
+    if (dto.nameEn !== undefined) data.nameEn = dto.nameEn;
     if (dto.deliveryFee !== undefined)
       data.deliveryFee = new Prisma.Decimal(dto.deliveryFee);
+    if (dto.eligibleForFreeDelivery !== undefined)
+      data.eligibleForFreeDelivery = dto.eligibleForFreeDelivery;
+    if (dto.isActive !== undefined) data.isActive = dto.isActive;
+    if (dto.areaType !== undefined) data.areaType = dto.areaType;
+    if (dto.parentId !== undefined) {
+      data.parent = dto.parentId
+        ? { connect: { id: dto.parentId } }
+        : { disconnect: true };
+    }
+    if (dto.region !== undefined || nextType === DeliveryAreaType.MAIN) {
+      data.region =
+        nextType === DeliveryAreaType.MAIN ? (nextRegion ?? null) : null;
+    }
     return this.prisma.deliveryArea.update({ where: { id }, data });
   }
 
@@ -108,74 +151,73 @@ export class DeliveryService {
     };
   }
 
-  /** Pure/reusable Decimal-safe score and fee engine. */
+  /**
+   * Percentage-based free delivery engine.
+   * rawProgress = scoreInput (sum of contribution% × quantity)
+   * displayProgress = min(rawProgress, 100)
+   * free delivery when rawProgress >= 95 and area is eligible
+   */
   calculateScoreResult(
     scoreInput: Prisma.Decimal | number | string,
-    settings: DeliverySettings,
+    _settings?: unknown,
     area?: {
       deliveryFee: Prisma.Decimal | number | string;
       eligibleForFreeDelivery: boolean;
     },
   ): FreeDeliveryCalculation {
-    const actualScore = new Prisma.Decimal(scoreInput);
-    const target = new Prisma.Decimal(settings.freeDeliveryTarget);
-    const threshold = new Prisma.Decimal(settings.partialFreeDeliveryThreshold);
+    const rawProgress = new Prisma.Decimal(scoreInput);
+    const target = new Prisma.Decimal(FREE_DELIVERY_PROGRESS_TARGET);
+    const eligibilityThreshold = new Prisma.Decimal(
+      FREE_DELIVERY_ELIGIBILITY_THRESHOLD,
+    );
     const originalFee = area
       ? new Prisma.Decimal(area.deliveryFee)
       : new Prisma.Decimal(0);
+
+    const displayedProgress = Prisma.Decimal.min(rawProgress, target);
+    const progressPercentage = Prisma.Decimal.min(
+      100,
+      rawProgress,
+    ).toDecimalPlaces(2);
+    const remainingScore = Prisma.Decimal.max(
+      0,
+      target.minus(rawProgress),
+    ).toDecimalPlaces(2);
+
     let fee = originalFee;
     let discount = new Prisma.Decimal(0);
     let isFree = false;
-    let isPartial = false;
 
-    if (area?.eligibleForFreeDelivery) {
-      if (actualScore.greaterThanOrEqualTo(target)) {
-        isFree = true;
-        discount = originalFee;
-        fee = new Prisma.Decimal(0);
-      } else if (
-        settings.partialFreeDeliveryEnabled &&
-        actualScore.greaterThanOrEqualTo(threshold)
-      ) {
-        isPartial = true;
-        discount = originalFee.times(
-          new Prisma.Decimal(settings.partialFreeDeliveryDiscount).div(100),
-        );
-        fee = originalFee.minus(discount);
-      }
+    if (
+      area?.eligibleForFreeDelivery &&
+      rawProgress.greaterThanOrEqualTo(eligibilityThreshold)
+    ) {
+      isFree = true;
+      discount = originalFee;
+      fee = new Prisma.Decimal(0);
     }
 
-    const displayed = Prisma.Decimal.min(actualScore, target);
-    const remaining = Prisma.Decimal.max(0, target.minus(actualScore));
-    const progress = target.greaterThan(0)
-      ? Prisma.Decimal.min(
-          100,
-          actualScore.div(target).times(100),
-        ).toDecimalPlaces(2)
-      : new Prisma.Decimal(0);
-
     return {
-      actualScore: actualScore.toDecimalPlaces(2).toNumber(),
-      displayedScore: displayed.toDecimalPlaces(2).toNumber(),
-      target: target.toNumber(),
-      progressPercentage: progress.toNumber(),
-      partialEnabled: settings.partialFreeDeliveryEnabled,
-      partialThreshold: threshold.toNumber(),
-      partialDiscount: settings.partialFreeDeliveryDiscount,
+      actualScore: rawProgress.toDecimalPlaces(2).toNumber(),
+      displayedScore: displayedProgress.toDecimalPlaces(2).toNumber(),
+      target: FREE_DELIVERY_PROGRESS_TARGET,
+      progressPercentage: progressPercentage.toNumber(),
+      partialEnabled: false,
+      partialThreshold: 0,
+      partialDiscount: 0,
       originalDeliveryFee: originalFee.toNumber(),
       deliveryFee: fee.toDecimalPlaces(2).toNumber(),
       deliveryDiscount: discount.toDecimalPlaces(2).toNumber(),
       isFreeDelivery: isFree,
-      isPartialFreeDelivery: isPartial,
+      isPartialFreeDelivery: false,
       areaEligibility: area ? area.eligibleForFreeDelivery : null,
-      remainingScore: remaining.toDecimalPlaces(2).toNumber(),
+      remainingScore: remainingScore.toNumber(),
     };
   }
 
   /** Authenticated API path: score is always derived from this user's DB cart. */
   async calculateFreeDelivery(userId: string, deliveryAreaId?: string) {
-    const [settings, cartItems, area] = await Promise.all([
-      this.settingsService.getDeliverySettings(),
+    const [cartItems, area] = await Promise.all([
       this.prisma.cartItem.findMany({
         where: { userId },
         include: { product: true },
@@ -190,13 +232,50 @@ export class DeliveryService {
     const score = cartItems.reduce(
       (sum, item) =>
         sum.plus(
-          new Prisma.Decimal(item.product.freeDeliveryValue).times(
-            item.quantity,
-          ),
+          resolveFreeDeliveryContribution(
+            item.product,
+            area?.areaType ?? DeliveryAreaType.MAIN,
+          ).times(item.quantity),
         ),
       new Prisma.Decimal(0),
     );
-    return this.calculateScoreResult(score, settings, area);
+    return this.calculateScoreResult(score, undefined, area);
+  }
+
+  private async validateAreaHierarchy(
+    areaType: DeliveryAreaType,
+    parentId?: string | null,
+    editingId?: string,
+    region?: DeliveryRegion | null,
+  ) {
+    if (areaType === DeliveryAreaType.MAIN) {
+      if (parentId) {
+        throw new ValidationException("Main areas cannot have a parent");
+      }
+      if (region != null && !DELIVERY_REGIONS.includes(region)) {
+        throw new ValidationException("Invalid geographic region");
+      }
+      return;
+    }
+
+    if (!parentId) {
+      throw new ValidationException("Sub-areas must belong to a main area");
+    }
+
+    const parent = await this.getAreaById(parentId);
+    if (!parent || parent.areaType !== DeliveryAreaType.MAIN) {
+      throw new ValidationException("Parent must be an active main area");
+    }
+
+    if (editingId && parentId === editingId) {
+      throw new ValidationException("An area cannot be its own parent");
+    }
+
+    if (region != null) {
+      throw new ValidationException(
+        "Geographic region can only be set on main areas",
+      );
+    }
   }
 
   private async requireArea(id: string) {

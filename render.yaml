@@ -34,7 +34,11 @@ services:
       - key: SEED_ADMIN_PASSWORD
         sync: false
       - key: STORAGE_PROVIDER
-        value: local
+        value: cloudinary
+      - key: CLOUDINARY_URL
+        sync: false
+      - key: CLOUDINARY_FOLDER
+        value: jaka
       - key: UPLOAD_DIR
         value: uploads
       - key: BCRYPT_ROUNDS

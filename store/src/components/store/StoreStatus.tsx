@@ -38,9 +38,12 @@ export function StoreClosedAlert() {
   const { isOpen, message } = useStoreOpen();
   if (isOpen) return null;
   return (
-    <div className="flex items-center gap-2 text-warning-600 bg-warning-50 rounded-xl p-3 text-sm">
-      <AlertTriangle className="w-4 h-4" />
-      <span>{message || 'لا يمكن إتمام الطلبات حالياً'}</span>
+    <div className="flex items-center gap-2 text-warning-600 bg-warning-50 rounded-xl p-3 text-sm mb-4">
+      <AlertTriangle className="w-4 h-4 shrink-0" />
+      <span>
+        {message ||
+          'المتجر مغلق حالياً — يمكنك التسوق وتجهيز طلبك، وسيتم التحقق عند تأكيد الإرسال.'}
+      </span>
     </div>
   );
 }

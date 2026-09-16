@@ -44,6 +44,30 @@ function translateError(msg: string): string {
   return msg;
 }
 
+export function isDeliveryAreaNotFound(error: unknown): boolean {
+  if (typeof error === 'object' && error !== null && 'response' in error) {
+    const resp = (error as { response?: { status?: number; data?: { message?: string | string[] } } })
+      .response;
+    if (resp?.status !== 404) return false;
+    const msg = resp.data?.message;
+    const text = Array.isArray(msg) ? msg.join(' ') : typeof msg === 'string' ? msg : '';
+    return /delivery area/i.test(text);
+  }
+  return false;
+}
+
+export function isStoreClosedError(error: unknown): boolean {
+  if (typeof error === 'object' && error !== null && 'response' in error) {
+    const resp = (error as { response?: { status?: number; data?: { message?: string | string[] } } })
+      .response;
+    if (resp?.status === 503) return true;
+    const msg = resp?.data?.message;
+    const text = Array.isArray(msg) ? msg.join(' ') : typeof msg === 'string' ? msg : '';
+    return /store is currently closed|المتجر مغلق/i.test(text);
+  }
+  return false;
+}
+
 export const ORDER_STATUS_AR: Record<string, string> = {
   PENDING: 'قيد الانتظار',
   PAYMENT_SUBMITTED: 'تم إرسال الدفع',

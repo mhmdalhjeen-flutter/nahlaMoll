@@ -11,6 +11,8 @@ import { ErrorState } from '@/components/ui/StateViews';
 import { OrderBadge, PaymentBadge } from '@/components/ui/StatusBadge';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/stores/toast-store';
+import { getOptimizedImageUrl } from '@/lib/image-url';
+import { formatCustomerOrderNumber } from '@/lib/order-number';
 
 const STATUSES = Object.keys(ORDER_STATUS_AR);
 
@@ -76,7 +78,7 @@ export default function OrderDetailPage() {
 
   return (
     <div>
-      <PageHeader title={`طلب ${order.orderNumber}`} />
+      <PageHeader title={`طلب ${formatCustomerOrderNumber(order.orderNumber)}`} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="card space-y-3">
@@ -109,7 +111,7 @@ export default function OrderDetailPage() {
               </div>
               <div className="text-left">
                 <p>{formatPrice(item.price)} ₪</p>
-                <p className="text-gray-500 text-xs">توصيل مجاني: {formatPrice(item.freeDeliveryValue)}</p>
+                <p className="text-gray-500 text-xs">مساهمة التوصيل: {Number(item.freeDeliveryValue)}% / وحدة</p>
               </div>
             </div>
           ))}
@@ -126,7 +128,7 @@ export default function OrderDetailPage() {
             <div>
               <p className="text-sm text-gray-500 mb-1">إثبات الدفع</p>
               <a href={order.paymentProof} target="_blank" rel="noopener noreferrer">
-                <Image src={order.paymentProof} alt="إثبات الدفع" width={200} height={200} className="rounded-xl object-contain max-h-48" />
+                <Image src={getOptimizedImageUrl(order.paymentProof, 'detail')} alt="إثبات الدفع" width={200} height={200} className="rounded-xl object-contain max-h-48" />
               </a>
             </div>
           )}

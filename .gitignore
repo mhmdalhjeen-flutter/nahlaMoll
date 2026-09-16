@@ -14,6 +14,12 @@ dist/
 out/
 .vercel/
 
+# Serwist (generated at build)
+store/public/sw.js
+store/public/sw.js.map
+store/public/swe-worker-*.js
+store/public/swe-worker-*.js.map
+
 # Misc
 .DS_Store
 *.pem

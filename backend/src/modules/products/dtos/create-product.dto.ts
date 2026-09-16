@@ -9,6 +9,7 @@ import {
   IsArray,
   ValidateNested,
   IsDate,
+  ValidateIf,
 } from "class-validator";
 import { Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
@@ -50,12 +51,29 @@ export class CreateProductDto {
   price: number;
 
   @ApiPropertyOptional({
-    description: "Value contributing to free delivery target",
+    description:
+      "Percentage contribution per unit toward free delivery (may exceed 100)",
   })
   @IsOptional()
   @IsNumber()
   @Min(0)
   freeDeliveryValue?: number = 0;
+
+  @ApiPropertyOptional({
+    description: "SUB_NEAR area percentage contribution per unit",
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  freeDeliveryValueSubNear?: number = 0;
+
+  @ApiPropertyOptional({
+    description: "SUB_FAR area percentage contribution per unit",
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  freeDeliveryValueSubFar?: number = 0;
 
   @ApiPropertyOptional({
     description: "Availability type",
@@ -107,23 +125,25 @@ export class CreateProductDto {
   hasOffer?: boolean = false;
 
   @ApiPropertyOptional({ enum: OfferType })
-  @IsOptional()
+  @ValidateIf((dto) => dto.hasOffer === true)
   @IsEnum(OfferType)
   offerType?: OfferType;
 
   @ApiPropertyOptional({ description: "Non-negative offer value" })
-  @IsOptional()
+  @ValidateIf((dto) => dto.hasOffer === true)
   @IsNumber()
   @Min(0)
   offerValue?: number;
 
   @ApiPropertyOptional({ description: "Offer start date" })
+  @ValidateIf((dto) => dto.hasOffer === true)
   @IsOptional()
   @Type(() => Date)
   @IsDate()
   offerStartDate?: Date;
 
   @ApiPropertyOptional({ description: "Offer end date" })
+  @ValidateIf((dto) => dto.hasOffer === true)
   @IsOptional()
   @Type(() => Date)
   @IsDate()

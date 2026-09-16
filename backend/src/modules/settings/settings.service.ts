@@ -1,8 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
-import { ValidationException } from "../../common/exceptions/business.exception";
 import { UpdateSettingsDto } from "./dtos/update-settings.dto";
+import { FREE_DELIVERY_PROGRESS_TARGET } from "../delivery/delivery.constants";
 
 @Injectable()
 export class SettingsService {
@@ -15,9 +15,10 @@ export class SettingsService {
       settings = await this.prisma.settings.create({
         data: {
           storeName: "متجر",
-          freeDeliveryTarget: new Prisma.Decimal(10),
-          partialFreeDeliveryThreshold: new Prisma.Decimal(5),
-          partialFreeDeliveryDiscount: 50,
+          freeDeliveryTarget: new Prisma.Decimal(FREE_DELIVERY_PROGRESS_TARGET),
+          partialFreeDeliveryThreshold: new Prisma.Decimal(0),
+          partialFreeDeliveryDiscount: 0,
+          partialFreeDeliveryEnabled: false,
         },
       });
     }
@@ -35,43 +36,23 @@ export class SettingsService {
       socialMediaLinks: settings.socialMediaLinks,
       isStoreOpen: settings.isStoreOpen,
       storeClosedMessage: settings.storeClosedMessage,
-      freeDeliveryTarget: settings.freeDeliveryTarget,
-      partialFreeDeliveryEnabled: settings.partialFreeDeliveryEnabled,
-      partialFreeDeliveryThreshold: settings.partialFreeDeliveryThreshold,
-      partialFreeDeliveryDiscount: settings.partialFreeDeliveryDiscount,
+      freeDeliveryTarget: FREE_DELIVERY_PROGRESS_TARGET,
+      partialFreeDeliveryEnabled: false,
+      partialFreeDeliveryThreshold: 0,
+      partialFreeDeliveryDiscount: 0,
     };
   }
 
   async updateSettings(dto: UpdateSettingsDto) {
     const current = await this.getSettings();
 
-    const target =
-      dto.freeDeliveryTarget !== undefined
-        ? new Prisma.Decimal(dto.freeDeliveryTarget)
-        : current.freeDeliveryTarget;
-    const threshold =
-      dto.partialFreeDeliveryThreshold !== undefined
-        ? new Prisma.Decimal(dto.partialFreeDeliveryThreshold)
-        : current.partialFreeDeliveryThreshold;
-
-    if (
-      dto.partialFreeDeliveryEnabled !== false &&
-      threshold.greaterThanOrEqualTo(target)
-    ) {
-      throw new ValidationException(
-        "Partial free delivery threshold must be strictly less than free delivery target",
-      );
-    }
-
-    const data: any = { ...dto };
-    if (dto.freeDeliveryTarget !== undefined) {
-      data.freeDeliveryTarget = new Prisma.Decimal(dto.freeDeliveryTarget);
-    }
-    if (dto.partialFreeDeliveryThreshold !== undefined) {
-      data.partialFreeDeliveryThreshold = new Prisma.Decimal(
-        dto.partialFreeDeliveryThreshold,
-      );
-    }
+    const data: Record<string, unknown> = { ...dto };
+    delete data.freeDeliveryTarget;
+    delete data.partialFreeDeliveryEnabled;
+    delete data.partialFreeDeliveryThreshold;
+    delete data.partialFreeDeliveryDiscount;
+    data.freeDeliveryTarget = new Prisma.Decimal(FREE_DELIVERY_PROGRESS_TARGET);
+    data.partialFreeDeliveryEnabled = false;
 
     return this.prisma.settings.update({
       where: { id: current.id },
@@ -80,12 +61,11 @@ export class SettingsService {
   }
 
   async getDeliverySettings() {
-    const settings = await this.getSettings();
     return {
-      freeDeliveryTarget: settings.freeDeliveryTarget,
-      partialFreeDeliveryEnabled: settings.partialFreeDeliveryEnabled,
-      partialFreeDeliveryThreshold: settings.partialFreeDeliveryThreshold,
-      partialFreeDeliveryDiscount: settings.partialFreeDeliveryDiscount,
+      freeDeliveryTarget: FREE_DELIVERY_PROGRESS_TARGET,
+      partialFreeDeliveryEnabled: false,
+      partialFreeDeliveryThreshold: 0,
+      partialFreeDeliveryDiscount: 0,
     };
   }
 

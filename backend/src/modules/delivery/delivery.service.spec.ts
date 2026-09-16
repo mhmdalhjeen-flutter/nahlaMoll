@@ -3,6 +3,10 @@ import { DeliveryService, FreeDeliveryCalculation } from "./delivery.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { SettingsService } from "../settings/settings.service";
 import { createMockPrismaService } from "../prisma/prisma.service.mock";
+import {
+  FREE_DELIVERY_ELIGIBILITY_THRESHOLD,
+  FREE_DELIVERY_PROGRESS_TARGET,
+} from "./delivery.constants";
 
 const mockPrisma = createMockPrismaService();
 const mockSettingsService = {
@@ -23,13 +27,6 @@ describe("DeliveryService", () => {
 
     service = module.get<DeliveryService>(DeliveryService);
     jest.clearAllMocks();
-
-    mockSettingsService.getDeliverySettings.mockResolvedValue({
-      freeDeliveryTarget: 100,
-      partialFreeDeliveryEnabled: true,
-      partialFreeDeliveryThreshold: 50,
-      partialFreeDeliveryDiscount: 50,
-    });
   });
 
   const baseArea = {
@@ -39,152 +36,111 @@ describe("DeliveryService", () => {
     eligibleForFreeDelivery: true,
   };
 
-  describe("exact target boundary cases", () => {
-    beforeEach(() => {
-      mockSettingsService.getDeliverySettings.mockResolvedValue({
-        freeDeliveryTarget: 10,
-        partialFreeDeliveryEnabled: true,
-        partialFreeDeliveryThreshold: 7,
-        partialFreeDeliveryDiscount: 50,
-      });
-    });
-
+  describe("calculateScoreResult — percentage model", () => {
     it.each([
-      [9, false, true, 1, 90],
-      [10, true, false, 0, 100],
-      [12, true, false, 0, 100],
-      [7, false, true, 3, 70],
+      [0, false, 0, 0, 100],
+      [50, false, 50, 50, 50],
+      [94, false, 94, 94, 6],
+      [95, true, 95, 95, 5],
+      [99, true, 99, 99, 1],
+      [100, true, 100, 100, 0],
+      [120, true, 100, 100, 0],
+      [250, true, 100, 100, 0],
     ])(
-      "calculates score=%s",
-      async (score, free, partial, remaining, progress) => {
-        mockPrisma.deliveryArea.findFirst.mockResolvedValue(baseArea);
-        mockPrisma.cartItem.findMany.mockResolvedValue([
-          { quantity: 1, product: { freeDeliveryValue: score } },
-        ]);
-        const result = await service.calculateFreeDelivery("user-1", "area-1");
+      "raw=%s → free=%s, display=%s, progress=%s, remaining=%s",
+      (raw, free, display, progress, remaining) => {
+        const result = service.calculateScoreResult(raw, undefined, baseArea);
         expect(result).toMatchObject({
-          actualScore: score,
-          displayedScore: Math.min(score, 10),
-          target: 10,
+          actualScore: raw,
+          displayedScore: display,
+          target: FREE_DELIVERY_PROGRESS_TARGET,
           progressPercentage: progress,
           remainingScore: remaining,
           isFreeDelivery: free,
-          isPartialFreeDelivery: partial,
+          isPartialFreeDelivery: false,
+          deliveryFee: free ? 0 : 20,
         });
       },
     );
 
-    it("does not discount an ineligible area at score 12", async () => {
-      mockPrisma.deliveryArea.findFirst.mockResolvedValue({
+    it("never applies partial delivery discount", () => {
+      const result = service.calculateScoreResult(75, undefined, baseArea);
+      expect(result.isPartialFreeDelivery).toBe(false);
+      expect(result.isFreeDelivery).toBe(false);
+      expect(result.deliveryFee).toBe(20);
+      expect(result.partialEnabled).toBe(false);
+    });
+
+    it("does not grant free delivery for ineligible area at 120%", () => {
+      const result = service.calculateScoreResult(120, undefined, {
         ...baseArea,
         eligibleForFreeDelivery: false,
       });
-      mockPrisma.cartItem.findMany.mockResolvedValue([
-        { quantity: 1, product: { freeDeliveryValue: 12 } },
-      ]);
-      const result = await service.calculateFreeDelivery("user-1", "area-1");
       expect(result).toMatchObject({
-        actualScore: 12,
-        displayedScore: 10,
+        actualScore: 120,
+        displayedScore: 100,
+        progressPercentage: 100,
         areaEligibility: false,
         deliveryFee: 20,
         isFreeDelivery: false,
-        isPartialFreeDelivery: false,
       });
     });
   });
 
   describe("calculateFreeDelivery", () => {
-    it("calculates actualScore from DB cart items, not from client input", async () => {
+    it("calculates actualScore from DB cart items", async () => {
       mockPrisma.deliveryArea.findFirst.mockResolvedValue(baseArea);
       mockPrisma.cartItem.findMany.mockResolvedValue([
         {
           id: "ci1",
           quantity: 2,
-          product: { freeDeliveryValue: 30, price: 10 },
+          product: { freeDeliveryValue: 30 },
         },
         {
           id: "ci2",
           quantity: 1,
-          product: { freeDeliveryValue: 50, price: 15 },
+          product: { freeDeliveryValue: 35 },
         },
       ]);
 
       const result: FreeDeliveryCalculation =
         await service.calculateFreeDelivery("user-1", "area-1");
 
-      expect(result.actualScore).toBe(110);
+      expect(result.actualScore).toBe(95);
       expect(result.isFreeDelivery).toBe(true);
       expect(result.deliveryFee).toBe(0);
     });
 
-    it("returns full free delivery when actualScore >= target", async () => {
+    it("60% × 2 = 120 → display 100 → free", async () => {
       mockPrisma.deliveryArea.findFirst.mockResolvedValue(baseArea);
       mockPrisma.cartItem.findMany.mockResolvedValue([
-        {
-          id: "ci1",
-          quantity: 1,
-          product: { freeDeliveryValue: 100, price: 10 },
-        },
+        { quantity: 2, product: { freeDeliveryValue: 60 } },
       ]);
-
       const result = await service.calculateFreeDelivery("user-1", "area-1");
-
+      expect(result.actualScore).toBe(120);
+      expect(result.displayedScore).toBe(100);
+      expect(result.progressPercentage).toBe(100);
       expect(result.isFreeDelivery).toBe(true);
-      expect(result.isPartialFreeDelivery).toBe(false);
-      expect(result.deliveryFee).toBe(0);
-      expect(result.deliveryDiscount).toBe(20);
-      expect(result.remainingScore).toBe(0);
     });
 
-    it("returns partial free delivery when threshold reached but target not met", async () => {
+    it("40 + 55 = 95 → free", async () => {
       mockPrisma.deliveryArea.findFirst.mockResolvedValue(baseArea);
       mockPrisma.cartItem.findMany.mockResolvedValue([
-        {
-          id: "ci1",
-          quantity: 1,
-          product: { freeDeliveryValue: 75, price: 10 },
-        },
+        { quantity: 1, product: { freeDeliveryValue: 40 } },
+        { quantity: 1, product: { freeDeliveryValue: 55 } },
       ]);
-
       const result = await service.calculateFreeDelivery("user-1", "area-1");
-
-      expect(result.isFreeDelivery).toBe(false);
-      expect(result.isPartialFreeDelivery).toBe(true);
-      expect(result.deliveryDiscount).toBe(10);
-      expect(result.deliveryFee).toBe(10);
+      expect(result.actualScore).toBe(95);
+      expect(result.isFreeDelivery).toBe(true);
     });
 
-    it("returns no discount when below partial threshold", async () => {
-      mockPrisma.deliveryArea.findFirst.mockResolvedValue(baseArea);
-      mockPrisma.cartItem.findMany.mockResolvedValue([
-        {
-          id: "ci1",
-          quantity: 1,
-          product: { freeDeliveryValue: 20, price: 10 },
-        },
-      ]);
-
-      const result = await service.calculateFreeDelivery("user-1", "area-1");
-
-      expect(result.isFreeDelivery).toBe(false);
-      expect(result.isPartialFreeDelivery).toBe(false);
-      expect(result.deliveryFee).toBe(20);
-      expect(result.deliveryDiscount).toBe(0);
-      expect(result.remainingScore).toBe(80);
-    });
-
-    it("ignores free delivery for ineligible area", async () => {
+    it("ignores free delivery for ineligible area at 200%", async () => {
       mockPrisma.deliveryArea.findFirst.mockResolvedValue({
         ...baseArea,
         eligibleForFreeDelivery: false,
       });
       mockPrisma.cartItem.findMany.mockResolvedValue([
-        {
-          id: "ci1",
-          quantity: 1,
-          product: { freeDeliveryValue: 200, price: 10 },
-        },
+        { quantity: 1, product: { freeDeliveryValue: 200 } },
       ]);
 
       const result = await service.calculateFreeDelivery("user-1", "area-1");
@@ -192,6 +148,27 @@ describe("DeliveryService", () => {
       expect(result.areaEligibility).toBe(false);
       expect(result.isFreeDelivery).toBe(false);
       expect(result.deliveryFee).toBe(20);
+    });
+  });
+
+  describe("geographic regions", () => {
+    it("returns four stable region codes", () => {
+      expect(service.getGeographicRegions()).toEqual([
+        "NORTH",
+        "GAZA",
+        "MIDDLE",
+        "SOUTH",
+      ]);
+    });
+  });
+
+  describe("eligibility threshold constant", () => {
+    it("uses 95 as eligibility threshold", () => {
+      expect(FREE_DELIVERY_ELIGIBILITY_THRESHOLD).toBe(95);
+      const below = service.calculateScoreResult(94, undefined, baseArea);
+      const at = service.calculateScoreResult(95, undefined, baseArea);
+      expect(below.isFreeDelivery).toBe(false);
+      expect(at.isFreeDelivery).toBe(true);
     });
   });
 });

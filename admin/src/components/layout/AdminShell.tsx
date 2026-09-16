@@ -107,7 +107,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           <h1 className="text-sm font-medium text-gray-700">إدارة المتجر</h1>
           <button type="button" className="lg:hidden text-sm text-error-600" onClick={handleLogout}>خروج</button>
         </header>
-        <main className="p-4 md:p-6">{children}</main>
+        <main className="p-3 sm:p-4 md:p-6 overflow-x-hidden max-w-full">{children}</main>
       </div>
     </div>
   );

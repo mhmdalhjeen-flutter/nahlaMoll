@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:store\" \"npm run dev:admin\"",
     "dev:backend": "cd backend && npx cross-env NODE_ENV=development npm run start:dev",
-    "dev:store": "cd store && npx cross-env NODE_ENV= npm run dev",
+    "dev:store": "cd store && npx cross-env NODE_ENV= NEXT_PUBLIC_API_URL=http://localhost:3001/api npm run dev",
     "dev:admin": "cd admin && npx cross-env NODE_ENV= NEXT_PUBLIC_API_URL=http://localhost:3001/api npm run dev",
     "build": "npm run build:backend && npm run build:store && npm run build:admin",
     "build:backend": "cd backend && npm run build",

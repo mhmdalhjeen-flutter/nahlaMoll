@@ -54,4 +54,10 @@ export class CreateAnnouncementDto {
   @Type(() => Date)
   @IsDate()
   endDate?: Date;
+
+  @ApiPropertyOptional({ description: "Optional announcement image URL" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  image?: string;
 }

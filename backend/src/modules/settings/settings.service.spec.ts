@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { SettingsService } from "./settings.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { createMockPrismaService } from "../prisma/prisma.service.mock";
-import { ValidationException } from "../../common/exceptions/business.exception";
+import { FREE_DELIVERY_PROGRESS_TARGET } from "../delivery/delivery.constants";
 
 const mockPrisma = createMockPrismaService();
 
@@ -28,9 +28,10 @@ describe("SettingsService", () => {
       mockPrisma.settings.create.mockResolvedValue({
         id: "default",
         storeName: "متجر",
-        freeDeliveryTarget: new Prisma.Decimal(10),
-        partialFreeDeliveryThreshold: new Prisma.Decimal(5),
-        partialFreeDeliveryDiscount: 50,
+        freeDeliveryTarget: new Prisma.Decimal(FREE_DELIVERY_PROGRESS_TARGET),
+        partialFreeDeliveryThreshold: new Prisma.Decimal(0),
+        partialFreeDeliveryDiscount: 0,
+        partialFreeDeliveryEnabled: false,
       });
 
       const result = await service.getSettings();
@@ -41,9 +42,10 @@ describe("SettingsService", () => {
   });
 
   describe("updateSettings", () => {
-    it("should accept partial threshold strictly less than target", async () => {
+    it("forces free delivery target to 100 and disables partial tier", async () => {
       mockPrisma.settings.findFirst.mockResolvedValue({
         id: "default",
+        storeName: "متجر",
         freeDeliveryTarget: new Prisma.Decimal(10),
         partialFreeDeliveryThreshold: new Prisma.Decimal(5),
         partialFreeDeliveryDiscount: 50,
@@ -51,44 +53,39 @@ describe("SettingsService", () => {
       });
       mockPrisma.settings.update.mockResolvedValue({});
 
-      const result = await service.updateSettings({
-        freeDeliveryTarget: 20,
-        partialFreeDeliveryThreshold: 10,
+      await service.updateSettings({
+        storeName: "جاكو",
       });
 
-      expect(result).toBeDefined();
-      expect(mockPrisma.settings.update).toHaveBeenCalled();
-    });
-
-    it("should reject partial threshold equal to target", async () => {
-      mockPrisma.settings.findFirst.mockResolvedValue({
-        id: "default",
-        freeDeliveryTarget: new Prisma.Decimal(10),
-        partialFreeDeliveryThreshold: new Prisma.Decimal(5),
-        partialFreeDeliveryDiscount: 50,
-        partialFreeDeliveryEnabled: true,
-      });
-
-      await expect(
-        service.updateSettings({
-          freeDeliveryTarget: 10,
-          partialFreeDeliveryThreshold: 10,
+      expect(mockPrisma.settings.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            freeDeliveryTarget: new Prisma.Decimal(100),
+            partialFreeDeliveryEnabled: false,
+          }),
         }),
-      ).rejects.toThrow(ValidationException);
+      );
     });
+  });
 
-    it("should reject partial threshold greater than target", async () => {
+  describe("getDeliverySettings", () => {
+    it("returns fixed percentage model settings", async () => {
       mockPrisma.settings.findFirst.mockResolvedValue({
         id: "default",
+        storeName: "متجر",
         freeDeliveryTarget: new Prisma.Decimal(10),
+        partialFreeDeliveryEnabled: true,
         partialFreeDeliveryThreshold: new Prisma.Decimal(5),
         partialFreeDeliveryDiscount: 50,
-        partialFreeDeliveryEnabled: true,
       });
 
-      await expect(
-        service.updateSettings({ partialFreeDeliveryThreshold: 15 }),
-      ).rejects.toThrow(ValidationException);
+      const result = await service.getDeliverySettings();
+      expect(result).toEqual({
+        freeDeliveryTarget: 100,
+        partialFreeDeliveryEnabled: false,
+        partialFreeDeliveryThreshold: 0,
+        partialFreeDeliveryDiscount: 0,
+      });
     });
   });
 });

@@ -1,3 +1,10 @@
+export interface PaginatedList<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export type ProductAvailability = 'LIMITED' | 'UNLIMITED' | 'UNAVAILABLE';
 export type OrderStatus = string;
 export type PaymentStatus = 'PENDING' | 'SUBMITTED' | 'VERIFIED' | 'REJECTED';
@@ -31,6 +38,8 @@ export interface Product {
   description: string;
   price: string | number;
   freeDeliveryValue: string | number;
+  freeDeliveryValueSubNear?: string | number;
+  freeDeliveryValueSubFar?: string | number;
   availability: ProductAvailability;
   stock: number;
   isAvailable: boolean;
@@ -38,8 +47,14 @@ export interface Product {
   isRecommended: boolean;
   categoryId: string;
   category?: { id: string; name: string };
+  condition?: 'NEW' | 'USED';
   images: string[];
+  tags?: string[];
   hasOffer?: boolean;
+  offerType?: string;
+  offerValue?: string | number;
+  offerStartDate?: string | null;
+  offerEndDate?: string | null;
   variants?: ProductVariant[];
 }
 
@@ -57,10 +72,14 @@ export interface Category {
   name: string;
   slug: string;
   description?: string | null;
+  image?: string | null;
   isActive: boolean;
   parentId?: string | null;
   children?: Category[];
+  _count?: { products: number };
 }
+
+export type DeliveryRegion = 'NORTH' | 'GAZA' | 'MIDDLE' | 'SOUTH';
 
 export interface DeliveryArea {
   id: string;
@@ -68,11 +87,40 @@ export interface DeliveryArea {
   deliveryFee: string | number;
   eligibleForFreeDelivery: boolean;
   isActive: boolean;
+  areaType?: 'MAIN' | 'SUB_NEAR' | 'SUB_FAR';
+  region?: DeliveryRegion | null;
+  parentId?: string | null;
+}
+
+export type PaymentMethodKey = 'BANK_OF_PALESTINE' | 'PALPAY' | 'JAWWAL_PAY';
+
+export interface PaymentAccount {
+  id: string;
+  method: PaymentMethodKey;
+  accountName: string;
+  accountNumber: string;
+  qrImageUrl?: string | null;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export interface PaymentAdminConfig {
+  cod: { enabled: boolean; note?: string | null };
+  methods: Record<
+    PaymentMethodKey,
+    { enabled: boolean; accounts: PaymentAccount[] }
+  >;
+  legacy?: {
+    paymentInstructions?: string | null;
+    paymentAccountDetails?: string | null;
+    paymentQrImage?: string | null;
+  };
 }
 
 export interface Settings {
   id: string;
   storeName: string;
+  storePhone?: string | null;
   isStoreOpen: boolean;
   storeClosedMessage?: string | null;
   freeDeliveryTarget: string | number;
@@ -109,6 +157,8 @@ export interface OrderItem {
   quantity: number;
   price: string | number;
   freeDeliveryValue: string | number;
+  freeDeliveryValueSubNear?: string | number;
+  freeDeliveryValueSubFar?: string | number;
   variantInfo?: string | null;
 }
 
@@ -116,6 +166,7 @@ export interface Announcement {
   id: string;
   title: string;
   content: string;
+  image?: string | null;
   isActive: boolean;
   priority: number;
   startDate: string;

@@ -8,6 +8,7 @@ import {
 } from "@nestjs/common";
 import { Request, Response } from "express";
 import { MulterError } from "multer";
+import { classifyDatabaseError } from "../utils/database-error.util";
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -17,12 +18,20 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
+    const requestId = request.requestId ?? "unknown";
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message: string | string[] = "Internal server error";
     let error = "Internal Server Error";
+    let logClassification: string | undefined;
 
-    if (exception instanceof HttpException) {
+    const databaseError = classifyDatabaseError(exception);
+    if (databaseError) {
+      status = databaseError.httpStatus;
+      message = databaseError.clientMessage;
+      error = databaseError.errorCode;
+      logClassification = databaseError.logClassification;
+    } else if (exception instanceof HttpException) {
       status = exception.getStatus();
       const exceptionResponse = exception.getResponse();
 
@@ -34,7 +43,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
           (responseObj.message as string | string[]) || exception.message;
         error = (responseObj.error as string) || error;
       }
-    } else if (exception instanceof MulterError) {
+    } else if (!databaseError && exception instanceof MulterError) {
       status = HttpStatus.BAD_REQUEST;
       error = "Bad Request";
       if (exception.code === "LIMIT_FILE_SIZE") {
@@ -44,11 +53,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
       } else {
         message = exception.message;
       }
-    } else if (exception instanceof Error) {
+    } else if (!databaseError && exception instanceof Error) {
       message = exception.message;
     }
 
     if (
+      !databaseError &&
       process.env.NODE_ENV === "production" &&
       status === HttpStatus.INTERNAL_SERVER_ERROR
     ) {
@@ -56,8 +66,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
       error = "Internal Server Error";
     }
 
+    const classificationSuffix = logClassification
+      ? ` classification=${logClassification}`
+      : "";
     this.logger.error(
-      `${request.method} ${request.url} - Status: ${status} - Message: ${message}`,
+      `request failed ${request.method} ${request.url} ${status} requestId=${requestId}${classificationSuffix}`,
       exception instanceof Error ? exception.stack : "",
     );
 

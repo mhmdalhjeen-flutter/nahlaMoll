@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { MiddlewareConsumer, Module, NestModule } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
 import { APP_GUARD } from "@nestjs/core";
@@ -17,9 +17,19 @@ import { AnnouncementsModule } from "./modules/announcements/announcements.modul
 import { SupportModule } from "./modules/support/support.module";
 import { AnalyticsModule } from "./modules/analytics/analytics.module";
 import { OrdersModule } from "./modules/orders/orders.module";
+import { PaymentModule } from "./modules/payment/payment.module";
+import { StoreWaitModule } from "./modules/store-wait/store-wait.module";
+import { AssistantModule } from "./modules/assistant/assistant.module";
+import { CustomerEventsModule } from "./modules/customer-events/customer-events.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { HealthModule } from "./modules/health/health.module";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { RolesGuard } from "./common/guards/roles.guard";
+import { RequestContextMiddleware } from "./common/middleware/request-context.middleware";
+import {
+  resolveRateLimitMax,
+  resolveRateLimitTtl,
+} from "./config/rate-limit.config";
 
 @Module({
   imports: [
@@ -29,8 +39,9 @@ import { RolesGuard } from "./common/guards/roles.guard";
     }),
     ThrottlerModule.forRoot([
       {
-        ttl: parseInt(process.env.RATE_LIMIT_TTL) || 60000,
-        limit: parseInt(process.env.RATE_LIMIT_MAX) || 100,
+        // @nestjs/throttler v5: ttl is milliseconds; limit is per IP per route
+        ttl: resolveRateLimitTtl(),
+        limit: resolveRateLimitMax(),
       },
     ]),
     PrismaModule,
@@ -48,6 +59,11 @@ import { RolesGuard } from "./common/guards/roles.guard";
     AnnouncementsModule,
     SupportModule,
     AnalyticsModule,
+    PaymentModule,
+    StoreWaitModule,
+    AssistantModule,
+    CustomerEventsModule,
+    NotificationsModule,
     HealthModule,
   ],
   providers: [
@@ -56,4 +72,8 @@ import { RolesGuard } from "./common/guards/roles.guard";
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(RequestContextMiddleware).forRoutes("*");
+  }
+}

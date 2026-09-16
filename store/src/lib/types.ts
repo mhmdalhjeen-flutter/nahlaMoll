@@ -45,6 +45,7 @@ export interface Category {
   name: string;
   slug: string;
   description?: string | null;
+  image?: string | null;
   parentId?: string | null;
   children?: Category[];
   products?: Product[];
@@ -66,15 +67,57 @@ export interface Product {
   description: string;
   price: string | number;
   freeDeliveryValue: string | number;
+  freeDeliveryValueSubNear?: string | number;
+  freeDeliveryValueSubFar?: string | number;
   availability: ProductAvailability;
   stock: number;
   isAvailable: boolean;
   isActive: boolean;
   isRecommended: boolean;
   images: string[];
+  tags?: string[];
   category?: Category;
+  categoryId?: string;
   variants?: ProductVariant[];
+  condition?: 'NEW' | 'USED';
   hasOffer?: boolean;
+  offerType?: string | null;
+  offerValue?: string | number | null;
+  offerStartDate?: string | null;
+  offerEndDate?: string | null;
+  /** Deterministic discovery reason from /products/discovery */
+  recommendationReason?: string;
+}
+
+export interface SearchSuggestion {
+  type: 'product' | 'category' | 'tag';
+  label: string;
+  value: string;
+}
+
+export interface SearchResult {
+  products: Product[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  suggestions: SearchSuggestion[];
+  meta: {
+    intent: string;
+    normalizedQuery: string;
+    fallbackUsed: boolean;
+    hasPersonalization: boolean;
+    totalBeforePagination: number;
+  };
+}
+
+export interface PublicSettings {
+  storeName?: string;
+  storePhone?: string | null;
+  freeDeliveryTarget?: string | number;
+  partialFreeDeliveryEnabled?: boolean;
+  partialFreeDeliveryThreshold?: string | number;
+  partialFreeDeliveryDiscount?: number;
 }
 
 export interface CartItem {
@@ -111,12 +154,17 @@ export interface CartResponse {
   summary: FreeDeliverySummary;
 }
 
+export type DeliveryRegion = 'NORTH' | 'GAZA' | 'MIDDLE' | 'SOUTH';
+
 export interface DeliveryArea {
   id: string;
   name: string;
   deliveryFee: string | number;
   eligibleForFreeDelivery: boolean;
   isActive: boolean;
+  areaType?: 'MAIN' | 'SUB_NEAR' | 'SUB_FAR';
+  region?: DeliveryRegion | null;
+  parentId?: string | null;
 }
 
 export interface OrderItem {
@@ -126,6 +174,8 @@ export interface OrderItem {
   quantity: number;
   price: string | number;
   freeDeliveryValue: string | number;
+  freeDeliveryValueSubNear?: string | number;
+  freeDeliveryValueSubFar?: string | number;
   variantInfo?: string | null;
 }
 
@@ -154,6 +204,7 @@ export interface Announcement {
   id: string;
   title: string;
   content: string;
+  image?: string | null;
   priority: number;
   startDate: string;
   endDate?: string | null;
@@ -188,6 +239,30 @@ export interface SupportMessage {
   createdAt: string;
 }
 
+export interface PaymentAccountPublic {
+  accountName: string;
+  accountNumber: string;
+  qrImageUrl?: string | null;
+}
+
+export type ElectronicPaymentMethodKey = 'bankOfPalestine' | 'palPay' | 'jawwalPay';
+
+export interface PublicPaymentConfig {
+  cod: {
+    enabled: boolean;
+    note?: string | null;
+  };
+  methods: {
+    bankOfPalestine: PaymentAccountPublic | null;
+    palPay: PaymentAccountPublic | null;
+    jawwalPay: PaymentAccountPublic | null;
+  };
+  paymentInstructions?: string | null;
+  paymentAccountDetails?: string | null;
+  paymentQrImage?: string | null;
+}
+
+/** @deprecated Use PublicPaymentConfig */
 export interface PaymentSettings {
   paymentInstructions?: string | null;
   paymentAccountDetails?: string | null;
@@ -199,9 +274,137 @@ export interface StoreStatus {
   message?: string | null;
 }
 
+export type StoreWaitRequestType = 'ADD_TO_CART' | 'CHECKOUT';
+export type StoreWaitRequestStatus = 'WAITING' | 'NOTIFIED' | 'CANCELLED' | 'COMPLETED';
+
+export interface StoreWaitRequest {
+  id: string;
+  userId: string;
+  type: StoreWaitRequestType;
+  status: StoreWaitRequestStatus;
+  payload: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type RegisterStoreWaitPayload =
+  | {
+      type: 'ADD_TO_CART';
+      productId: string;
+      variantId?: string;
+      quantity?: number;
+    }
+  | {
+      type: 'CHECKOUT';
+      deliveryAreaId: string;
+      deliveryAddress: string;
+      notes?: string;
+    };
+
 export interface PaginatedProducts {
   products: Product[];
   total: number;
   page: number;
   pageSize: number;
 }
+
+export interface PaginatedList<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export type DiscoverySectionType =
+  | 'personalized'
+  | 'free_delivery_boost'
+  | 'most_ordered'
+  | 'most_favorited';
+
+export interface DiscoverySection {
+  sectionType: DiscoverySectionType;
+  title: string;
+  subtitle?: string;
+  viewAllHref?: string;
+  products: Product[];
+}
+
+export interface DiscoveryFeed {
+  sections: DiscoverySection[];
+  meta: {
+    hasPersonalData: boolean;
+    hasCartContext: boolean;
+  };
+}
+
+/** Expected customer notification shape — align with backend when implemented. */
+export type CustomerNotificationType =
+  | 'order'
+  | 'delivery'
+  | 'free_delivery'
+  | 'favorite'
+  | 'offer'
+  | 'system';
+
+export type CustomerNotificationTargetType =
+  | 'order'
+  | 'product'
+  | 'offer'
+  | 'cart'
+  | 'none';
+
+export interface CustomerNotification {
+  id: string;
+  type: CustomerNotificationType;
+  title: string;
+  message: string;
+  createdAt: string;
+  isRead: boolean;
+  targetType: CustomerNotificationTargetType;
+  targetId?: string | null;
+  image?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface NotificationUnreadCount {
+  count: number;
+}
+
+export interface CustomerNotificationPreferences {
+  orderUpdates: boolean;
+  freeDelivery: boolean;
+  favorites: boolean;
+  offers: boolean;
+  personalRecommendations: boolean;
+  newProducts: boolean;
+  abuAlaaNews: boolean;
+  pushEnabled: boolean;
+  emailEnabled: boolean;
+  doNotDisturbEnabled: boolean;
+  doNotDisturbFrom: string | null;
+  doNotDisturbUntil: string | null;
+  updatedAt: string;
+  channels: {
+    pushSupported: boolean;
+    emailSupported: boolean;
+    deliverySchedulingSupported: boolean;
+  };
+}
+
+export type NotificationPreferencePatch = Partial<
+  Pick<
+    CustomerNotificationPreferences,
+    | 'orderUpdates'
+    | 'freeDelivery'
+    | 'favorites'
+    | 'offers'
+    | 'personalRecommendations'
+    | 'newProducts'
+    | 'abuAlaaNews'
+    | 'pushEnabled'
+    | 'emailEnabled'
+    | 'doNotDisturbEnabled'
+    | 'doNotDisturbFrom'
+    | 'doNotDisturbUntil'
+  >
+>;

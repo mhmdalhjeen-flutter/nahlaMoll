@@ -89,47 +89,130 @@ describe("ProductsService", () => {
         } as any),
       ).rejects.toThrow(ValidationException);
     });
+
+    it("should create a product without offer when offerValue is omitted", async () => {
+      mockPrisma.category.findUnique.mockResolvedValue({ id: "cat-1" });
+      mockPrisma.product.create.mockResolvedValue({ id: "prod-2" });
+
+      await service.create({
+        name: "No Offer Product",
+        description: "Desc",
+        categoryId: "cat-1",
+        price: 10,
+        stock: 50,
+        availability: ProductAvailability.LIMITED,
+        hasOffer: false,
+      } as any);
+
+      expect(mockPrisma.product.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            price: new Prisma.Decimal(10),
+            stock: 50,
+            hasOffer: false,
+            offerType: null,
+            offerValue: null,
+          }),
+        }),
+      );
+    });
+  });
+
+  describe("update", () => {
+    it("should clear offer fields without DecimalError when hasOffer is false", async () => {
+      mockPrisma.product.findUnique.mockResolvedValue({
+        id: "prod-1",
+        availability: ProductAvailability.LIMITED,
+        stock: 50,
+        hasOffer: true,
+        offerType: "PERCENTAGE",
+        offerValue: new Prisma.Decimal(30),
+        offerStartDate: null,
+        offerEndDate: null,
+      });
+      mockPrisma.product.update.mockResolvedValue({
+        id: "prod-1",
+        price: new Prisma.Decimal(10),
+      });
+
+      await service.update("prod-1", {
+        hasOffer: false,
+        price: 10,
+        stock: 50,
+      } as any);
+
+      expect(mockPrisma.product.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            hasOffer: false,
+            offerType: null,
+            offerValue: null,
+            price: new Prisma.Decimal(10),
+            stock: 50,
+          }),
+        }),
+      );
+    });
+
+    it("should preserve base price separately from offer value", async () => {
+      mockPrisma.product.findUnique.mockResolvedValue({
+        id: "prod-1",
+        availability: ProductAvailability.LIMITED,
+        stock: 50,
+        hasOffer: false,
+        offerType: null,
+        offerValue: null,
+        offerStartDate: null,
+        offerEndDate: null,
+      });
+      mockPrisma.product.update.mockResolvedValue({ id: "prod-1" });
+
+      await service.update("prod-1", {
+        hasOffer: true,
+        offerType: "PERCENTAGE",
+        offerValue: 10,
+        price: 10,
+        stock: 50,
+      } as any);
+
+      expect(mockPrisma.product.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            price: new Prisma.Decimal(10),
+            offerValue: new Prisma.Decimal(10),
+            stock: 50,
+          }),
+        }),
+      );
+    });
   });
 
   describe("remove", () => {
-    it("should hard delete a product with no references", async () => {
+    it("should hard delete a product with no active order references", async () => {
       mockPrisma.product.findUnique.mockResolvedValue({
         id: "prod-1",
         availability: ProductAvailability.UNLIMITED,
       });
-      mockPrisma.cartItem.count.mockResolvedValue(0);
       mockPrisma.orderItem.count.mockResolvedValue(0);
-      mockPrisma.product.delete.mockResolvedValue({ id: "prod-1" });
+      mockPrisma.$transaction.mockResolvedValue([]);
 
       const result = await service.remove("prod-1");
 
       expect(result.action).toBe("deleted");
-      expect(mockPrisma.product.delete).toHaveBeenCalledWith({
-        where: { id: "prod-1" },
-      });
+      expect(mockPrisma.$transaction).toHaveBeenCalled();
     });
 
-    it("should deactivate a product referenced in a cart", async () => {
+    it("should reject deletion when active orders reference the product", async () => {
       mockPrisma.product.findUnique.mockResolvedValue({
         id: "prod-1",
         availability: ProductAvailability.UNLIMITED,
       });
-      mockPrisma.cartItem.count.mockResolvedValue(1);
-      mockPrisma.orderItem.count.mockResolvedValue(0);
-      mockPrisma.product.update.mockResolvedValue({
-        id: "prod-1",
-        isActive: false,
-      });
+      mockPrisma.orderItem.count.mockResolvedValue(2);
 
-      const result = await service.remove("prod-1");
-
-      expect(result.action).toBe("deactivated");
-      expect(mockPrisma.product.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: "prod-1" },
-          data: { isActive: false, isAvailable: false },
-        }),
+      await expect(service.remove("prod-1")).rejects.toThrow(
+        ValidationException,
       );
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
     });
   });
 

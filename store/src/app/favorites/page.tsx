@@ -25,7 +25,7 @@ function FavoritesContent() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['favorites'],
-    queryFn: storeApi.getFavorites,
+    queryFn: () => storeApi.getFavorites({ limit: 100 }),
   });
 
   const removeFav = useMutation({
@@ -37,7 +37,7 @@ function FavoritesContent() {
     onError: (e) => toast(getErrorMessage(e), 'error'),
   });
 
-  const products: Product[] = (data ?? []).map((f) => f.product);
+  const products: Product[] = (data?.items ?? []).map((f) => f.product);
 
   if (isLoading) return <div className="container mx-auto px-4 py-6"><ProductGridSkeleton /></div>;
 

@@ -20,6 +20,11 @@ export class CreateCategoryDto {
   @IsString()
   description?: string;
 
+  @ApiPropertyOptional({ description: "Category image URL" })
+  @IsOptional()
+  @IsString()
+  image?: string;
+
   @ApiPropertyOptional({ description: "Parent category ID" })
   @IsOptional()
   @IsString()

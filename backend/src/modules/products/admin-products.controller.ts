@@ -12,7 +12,7 @@ import { Roles } from "../../common/decorators/roles.decorator";
 import { ProductsService } from "./products.service";
 import { CreateProductDto } from "./dtos/create-product.dto";
 import { UpdateProductDto } from "./dtos/update-product.dto";
-import { PaginationDto } from "../../common/dtos/pagination.dto";
+import { AdminProductsQueryDto } from "./dtos/admin-products-query.dto";
 import { UserRole } from "../users/enums/user-role.enum";
 
 @Controller("admin/products")
@@ -21,15 +21,13 @@ export class AdminProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
   @Get()
-  async findAll(
-    @Query() paginationDto: PaginationDto,
-    @Query("includeInactive") includeInactive?: string,
-  ) {
+  async findAll(@Query() query: AdminProductsQueryDto) {
     return this.productsService.findAll({
-      skip: paginationDto.skip,
-      take: paginationDto.limit,
-      orderBy: { [paginationDto.sortBy]: paginationDto.sortOrder },
-      includeInactive: includeInactive === "true",
+      skip: query.skip,
+      take: query.limit,
+      where: query.categoryId ? { categoryId: query.categoryId } : undefined,
+      orderBy: { [query.sortBy]: query.sortOrder },
+      includeInactive: query.includeInactive,
     });
   }
 

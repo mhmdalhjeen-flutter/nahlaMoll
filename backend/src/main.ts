@@ -2,7 +2,6 @@ import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import { NestExpressApplication } from "@nestjs/platform-express";
-import { join } from "path";
 import helmet from "helmet";
 import { AppModule } from "./app.module";
 import { WinstonModule } from "nest-winston";
@@ -14,6 +13,7 @@ import {
   getCorsOrigins,
   validateCorsOriginsForProduction,
 } from "./config/cors.config";
+import { resolveUploadsRoot } from "./config/uploads-path";
 
 async function bootstrap() {
   validateEnvForRuntime();
@@ -58,7 +58,9 @@ async function bootstrap() {
     }),
   );
 
-  app.useStaticAssets(join(process.cwd(), "uploads"), {
+  // Serve local uploads for legacy/dev URLs regardless of active storage provider.
+  const uploadsRoot = resolveUploadsRoot();
+  app.useStaticAssets(uploadsRoot, {
     prefix: "/uploads/",
   });
 
@@ -82,12 +84,12 @@ async function bootstrap() {
     origin: corsOrigins,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Request-ID"],
   });
 
   const apiPrefix = process.env.API_PREFIX || "api";
   app.setGlobalPrefix(apiPrefix, {
-    exclude: ["health", "health/db"],
+    exclude: ["health", "health/db", "health/ready"],
   });
 
   if (process.env.NODE_ENV !== "production") {

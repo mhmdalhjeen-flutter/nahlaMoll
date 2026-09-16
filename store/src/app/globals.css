@@ -4,15 +4,54 @@
 
 @layer base {
   :root {
-    --color-primary-50: 240 249 255;
-    --color-primary-100: 224 242 254;
-    --color-primary-500: 14 165 233;
-    --color-primary-600: 2 132 199;
-    --color-primary-700: 3 105 161;
-    
+    /* Brand primary — logBee gold #F0B010 */
+    --brand-primary: 240 176 16;
+    --brand-primary-hover: 224 160 0;
+    --brand-primary-active: 208 128 0;
+
+    /* Brand secondary — logBee navy #002040 */
+    --brand-secondary: 0 32 64;
+    --brand-secondary-hover: 0 24 48;
+    --brand-secondary-active: 0 16 48;
+
+    /* Header — light surface (logo has light background) */
+    --header-background: 255 255 255;
+    --header-foreground: 0 32 64;
+    --header-muted: 100 116 139;
+    --header-border: 226 232 240;
+
+    --brand-surface: 255 250 235;
+    --brand-surface-hover: 254 240 199;
+
+    /* Surfaces */
+    --background: 248 250 252;
+    --surface: 255 255 255;
+    --surface-muted: 241 245 249;
+
+    /* Text */
+    --text-primary: 15 23 42;
+    --text-secondary: 71 85 105;
+    --text-muted: 148 163 184;
+
+    /* Borders */
+    --border: 226 232 240;
+    --border-muted: 241 245 249;
+
+    /* Semantic */
     --color-success-500: 34 197 94;
+    --color-success-600: 22 163 74;
     --color-error-500: 239 68 68;
+    --color-error-600: 220 38 38;
     --color-warning-500: 245 158 11;
+    --color-warning-600: 217 119 6;
+
+    /* Tailwind primary scale (yellow) */
+    --color-primary-50: 255 251 235;
+    --color-primary-100: 254 243 199;
+    --color-primary-200: 253 230 138;
+    --color-primary-500: 240 176 16;
+    --color-primary-600: 224 160 0;
+    --color-primary-700: 208 128 0;
   }
 
   * {
@@ -26,9 +65,9 @@
   body {
     @apply font-arabic text-gray-900 antialiased;
     direction: rtl;
+    background-color: rgb(var(--background));
   }
 
-  /* RTL specific adjustments */
   [dir="rtl"] {
     text-align: right;
   }
@@ -38,7 +77,6 @@
     text-align: left;
   }
 
-  /* Phone indicator colors */
   .phone-green {
     @apply text-phone-green;
   }
@@ -54,7 +92,93 @@
   }
 
   .btn-primary {
-    @apply btn bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500;
+    @apply btn bg-primary-500 text-gray-900 hover:bg-primary-600 active:bg-primary-700 focus:ring-primary-500;
+  }
+
+  .btn-cta {
+    @apply btn bg-primary-500 text-gray-900 hover:bg-primary-600 active:bg-primary-700 focus:ring-primary-500;
+  }
+
+  .brand-lockup {
+    @apply inline-flex items-center justify-center select-none;
+  }
+
+  .header-brand-edge {
+    box-shadow: 0 1px 0 0 rgb(var(--header-border) / 1);
+  }
+
+  .surface-header-primary {
+    @apply bg-navy-800 text-white backdrop-blur-md shadow-md;
+  }
+
+  .surface-header-secondary {
+    background-color: rgb(255 255 255 / 98%);
+    border-bottom: 1px solid rgb(229 231 235 / 90%);
+    backdrop-filter: blur(8px);
+  }
+
+  .header-gold-accent {
+    @apply h-0.5 w-full bg-gradient-to-l from-primary-400 via-primary-500 to-primary-600;
+  }
+
+  .header-logo-surface {
+    @apply inline-flex items-center justify-center rounded-lg bg-white px-2 py-1 shadow-sm;
+  }
+
+  .header-search-trigger {
+    @apply flex items-center gap-2.5 min-h-[40px] px-3 rounded-xl bg-white text-sm text-gray-500 text-right;
+    @apply border border-white/20 shadow-sm transition-colors duration-200;
+    @apply hover:bg-gray-50 active:scale-[0.99] touch-manipulation;
+    @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70;
+  }
+
+  .header-search-field {
+    @apply w-full rounded-xl border border-gray-200/90 bg-white shadow-sm;
+    @apply pr-10 pl-4 text-sm text-gray-900 placeholder:text-gray-400;
+    @apply transition-all duration-200 hover:border-gray-300 hover:shadow;
+    @apply focus:outline-none focus:ring-2 focus:ring-primary-300/80 focus:border-primary-500;
+  }
+
+  .header-action {
+    @apply relative inline-flex items-center justify-center rounded-xl transition-colors duration-200 min-h-[44px] min-w-[44px] touch-manipulation;
+    @apply text-navy-700 hover:bg-navy-50 hover:text-navy-900 active:scale-[0.98];
+    @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-white;
+  }
+
+  .header-action-active {
+    @apply bg-primary-50 text-primary-700 ring-1 ring-primary-200/80;
+  }
+
+  .header-action-dark {
+    @apply relative inline-flex items-center justify-center rounded-xl transition-colors duration-200 min-h-[44px] min-w-[44px] touch-manipulation;
+    @apply text-white/90 hover:bg-white/10 hover:text-white active:scale-[0.98];
+    @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-navy-800;
+  }
+
+  .header-action-dark-active {
+    @apply bg-white/15 text-primary-300 ring-1 ring-primary-400/40;
+  }
+
+  .header-secondary-link {
+    @apply inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-navy-600 rounded-lg transition-colors whitespace-nowrap;
+    @apply hover:text-navy-900 hover:bg-navy-50/80;
+  }
+
+  .header-secondary-link-active {
+    @apply text-navy-900 font-semibold bg-primary-50/80 relative;
+  }
+
+  .header-secondary-link-active::after {
+    content: '';
+    @apply absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-primary-500;
+  }
+
+  .surface-bottom-nav {
+    @apply bg-white/95 backdrop-blur-md border-t border-gray-200/90 shadow-[0_-2px_12px_rgba(15,23,42,0.05)];
+  }
+
+  .surface-page {
+    @apply bg-slate-50;
   }
 
   .btn-secondary {
@@ -62,7 +186,7 @@
   }
 
   .btn-outline {
-    @apply btn border-2 border-primary-600 text-primary-600 hover:bg-primary-50 focus:ring-primary-500;
+    @apply btn border-2 border-navy-600 text-navy-700 hover:bg-navy-50 focus:ring-navy-500;
   }
 
   .card {
@@ -70,7 +194,7 @@
   }
 
   .input {
-    @apply w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-right outline-none transition-all duration-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 placeholder:text-gray-400;
+    @apply w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-right outline-none transition-all duration-200 focus:border-navy-400 focus:ring-2 focus:ring-navy-100 placeholder:text-gray-400;
   }
 
   .skeleton {
@@ -95,5 +219,27 @@
   }
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
+  }
+
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }

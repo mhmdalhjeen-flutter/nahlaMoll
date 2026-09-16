@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
 import { UploadService } from "./upload.service";
 import { UploadController } from "./upload.controller";
 import { LocalStorageProvider } from "./storage/local-storage.provider";
+import { CloudinaryStorageProvider } from "./storage/cloudinary-storage.provider";
 import { STORAGE_PROVIDER } from "./storage/storage.interface";
 
 @Module({
@@ -11,13 +12,32 @@ import { STORAGE_PROVIDER } from "./storage/storage.interface";
   providers: [
     UploadService,
     LocalStorageProvider,
+    CloudinaryStorageProvider,
     {
       provide: STORAGE_PROVIDER,
-      useFactory: (config: ConfigService, local: LocalStorageProvider) => {
-        const provider = config.get<string>("STORAGE_PROVIDER", "local");
+      useFactory: (
+        config: ConfigService,
+        local: LocalStorageProvider,
+        cloudinary: CloudinaryStorageProvider,
+      ) => {
+        const explicit = config.get<string>("STORAGE_PROVIDER")?.trim();
+        const hasDiscreteCloudinary =
+          Boolean(config.get<string>("CLOUDINARY_CLOUD_NAME")?.trim()) &&
+          Boolean(config.get<string>("CLOUDINARY_API_KEY")?.trim()) &&
+          Boolean(config.get<string>("CLOUDINARY_API_SECRET")?.trim());
+        const hasCloudinaryUrl = Boolean(
+          config.get<string>("CLOUDINARY_URL")?.trim(),
+        );
+        const provider =
+          explicit ??
+          (hasDiscreteCloudinary || hasCloudinaryUrl ? "cloudinary" : "local");
 
         if (provider === "local") {
           return local;
+        }
+
+        if (provider === "cloudinary") {
+          return cloudinary;
         }
 
         if (provider === "r2") {
@@ -29,7 +49,7 @@ import { STORAGE_PROVIDER } from "./storage/storage.interface";
 
         throw new Error(`Unknown STORAGE_PROVIDER: ${provider}`);
       },
-      inject: [ConfigService, LocalStorageProvider],
+      inject: [ConfigService, LocalStorageProvider, CloudinaryStorageProvider],
     },
   ],
   exports: [UploadService],

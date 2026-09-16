@@ -33,6 +33,20 @@ export class UploadController {
     return this.uploadService.uploadImage(file, UploadCategory.PRODUCT_IMAGE);
   }
 
+  @Post("admin/upload/category-image")
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(FileInterceptor("file", createUploadMulterOptions()))
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: { file: { type: "string", format: "binary" } },
+    },
+  })
+  uploadCategoryImage(@UploadedFile() file: Express.Multer.File) {
+    return this.uploadService.uploadImage(file, UploadCategory.CATEGORY_IMAGE);
+  }
+
   @Post("admin/upload/payment-qr")
   @Roles(UserRole.ADMIN)
   @UseInterceptors(FileInterceptor("file", createUploadMulterOptions()))
@@ -45,6 +59,23 @@ export class UploadController {
   })
   uploadPaymentQr(@UploadedFile() file: Express.Multer.File) {
     return this.uploadService.uploadImage(file, UploadCategory.PAYMENT_QR);
+  }
+
+  @Post("admin/upload/announcement-image")
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(FileInterceptor("file", createUploadMulterOptions()))
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: { file: { type: "string", format: "binary" } },
+    },
+  })
+  uploadAnnouncementImage(@UploadedFile() file: Express.Multer.File) {
+    return this.uploadService.uploadImage(
+      file,
+      UploadCategory.ANNOUNCEMENT_IMAGE,
+    );
   }
 
   @Post("upload/payment-proof")

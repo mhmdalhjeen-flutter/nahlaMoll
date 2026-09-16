@@ -1,7 +1,9 @@
 export enum UploadCategory {
   PRODUCT_IMAGE = "products",
+  CATEGORY_IMAGE = "categories",
   PAYMENT_PROOF = "payment-proofs",
   PAYMENT_QR = "payment-qr",
+  ANNOUNCEMENT_IMAGE = "announcements",
 }
 
 export interface StoredFile {

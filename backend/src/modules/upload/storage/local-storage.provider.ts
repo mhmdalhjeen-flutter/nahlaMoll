@@ -4,6 +4,10 @@ import { mkdir, writeFile, unlink } from "fs/promises";
 import { join, extname } from "path";
 import { randomUUID } from "crypto";
 import {
+  getBackendPublicOrigin,
+  resolveUploadsRoot,
+} from "../../../config/uploads-path";
+import {
   StorageProvider,
   StoredFile,
   UploadCategory,
@@ -11,13 +15,14 @@ import {
 
 @Injectable()
 export class LocalStorageProvider implements StorageProvider {
-  private readonly uploadDir: string;
+  private readonly uploadRoot: string;
   private readonly publicBaseUrl: string;
 
   constructor(private configService: ConfigService) {
-    this.uploadDir = this.configService.get<string>("UPLOAD_DIR") || "uploads";
+    this.uploadRoot = resolveUploadsRoot();
     this.publicBaseUrl =
-      this.configService.get<string>("BACKEND_URL") || "http://localhost:3001";
+      this.configService.get<string>("BACKEND_URL")?.trim() ||
+      getBackendPublicOrigin();
   }
 
   async save(
@@ -29,14 +34,14 @@ export class LocalStorageProvider implements StorageProvider {
     const safeName = `${randomUUID()}${ext}`;
     const relativeDir = ownerId ? join(category, ownerId) : category;
     const relativePath = join(relativeDir, safeName);
-    const absoluteDir = join(process.cwd(), this.uploadDir, relativeDir);
-    const absolutePath = join(process.cwd(), this.uploadDir, relativePath);
+    const absoluteDir = join(this.uploadRoot, relativeDir);
+    const absolutePath = join(this.uploadRoot, relativePath);
 
     await mkdir(absoluteDir, { recursive: true });
     await writeFile(absolutePath, file.buffer);
 
     const key = relativePath.replace(/\\/g, "/");
-    const url = `${this.publicBaseUrl}/uploads/${key}`;
+    const url = `${this.publicBaseUrl.replace(/\/+$/, "")}/uploads/${key}`;
 
     return {
       key,
@@ -48,7 +53,7 @@ export class LocalStorageProvider implements StorageProvider {
   }
 
   async delete(key: string): Promise<void> {
-    const absolutePath = join(process.cwd(), this.uploadDir, key);
+    const absolutePath = join(this.uploadRoot, key);
     try {
       await unlink(absolutePath);
     } catch {

@@ -15,27 +15,21 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
     storeName: '',
+    storePhone: '',
     isStoreOpen: true,
     storeClosedMessage: '',
-    freeDeliveryTarget: '',
-    partialFreeDeliveryEnabled: false,
-    partialFreeDeliveryThreshold: '',
-    partialFreeDeliveryDiscount: '0',
   });
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const s = await adminApi.getSettings();
+      const s: Settings = await adminApi.getSettings();
       setForm({
         storeName: s.storeName,
+        storePhone: s.storePhone ?? '',
         isStoreOpen: s.isStoreOpen,
         storeClosedMessage: s.storeClosedMessage ?? '',
-        freeDeliveryTarget: String(s.freeDeliveryTarget),
-        partialFreeDeliveryEnabled: s.partialFreeDeliveryEnabled,
-        partialFreeDeliveryThreshold: String(s.partialFreeDeliveryThreshold),
-        partialFreeDeliveryDiscount: String(s.partialFreeDeliveryDiscount),
       });
     } catch (e) {
       setError(getErrorMessage(e));
@@ -52,12 +46,9 @@ export default function SettingsPage() {
     try {
       await adminApi.updateSettings({
         storeName: form.storeName,
+        storePhone: form.storePhone.trim() || undefined,
         isStoreOpen: form.isStoreOpen,
         storeClosedMessage: form.storeClosedMessage || undefined,
-        freeDeliveryTarget: parseFloat(form.freeDeliveryTarget),
-        partialFreeDeliveryEnabled: form.partialFreeDeliveryEnabled,
-        partialFreeDeliveryThreshold: parseFloat(form.partialFreeDeliveryThreshold),
-        partialFreeDeliveryDiscount: parseInt(form.partialFreeDeliveryDiscount, 10),
       });
       toast('تم حفظ الإعدادات', 'success');
     } catch (err) {
@@ -88,29 +79,33 @@ export default function SettingsPage() {
           </button>
         </div>
 
+        <div className="rounded-xl bg-primary-50 border border-primary-100 p-4 text-sm text-gray-700 space-y-1">
+          <p className="font-semibold text-primary-800">قواعد التوصيل المجاني</p>
+          <p>يُحسب التقدم كنسبة مئوية من مساهمة المنتجات (مجموع: نسبة المنتج × الكمية).</p>
+          <p>عند الوصول إلى <strong>95%</strong> أو أكثر → توصيل مجاني في المناطق المؤهلة.</p>
+          <p>شريط التقدم للعميل لا يتجاوز 100%.</p>
+        </div>
+
         <Field label="اسم المتجر">
           <input className="input" required value={form.storeName} onChange={(e) => setForm({ ...form, storeName: e.target.value })} />
+        </Field>
+        <Field label="رقم واتساب للتواصل">
+          <input
+            className="input ltr-input"
+            dir="ltr"
+            type="tel"
+            inputMode="tel"
+            value={form.storePhone}
+            onChange={(e) => setForm({ ...form, storePhone: e.target.value })}
+            placeholder="059xxxxxxx أو 056xxxxxxx"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            يظهر زر واتساب للعملاء عند إدخال الرقم. يُفضّل الصيغة المحلية مثل 059 أو 056.
+          </p>
         </Field>
         <Field label="رسالة الإغلاق">
           <textarea className="input" value={form.storeClosedMessage} onChange={(e) => setForm({ ...form, storeClosedMessage: e.target.value })} placeholder="تظهر للعملاء عند إغلاق المتجر" />
         </Field>
-        <Field label="هدف التوصيل المجاني (₪)">
-          <input type="number" step="0.01" min="0.01" className="input ltr-input" dir="ltr" required value={form.freeDeliveryTarget} onChange={(e) => setForm({ ...form, freeDeliveryTarget: e.target.value })} />
-        </Field>
-        <label className="flex items-center gap-2">
-          <input type="checkbox" checked={form.partialFreeDeliveryEnabled} onChange={(e) => setForm({ ...form, partialFreeDeliveryEnabled: e.target.checked })} />
-          تفعيل التوصيل المجاني الجزئي
-        </label>
-        {form.partialFreeDeliveryEnabled && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="حد التوصيل الجزئي (₪)">
-              <input type="number" step="0.01" min="0.01" className="input ltr-input" dir="ltr" value={form.partialFreeDeliveryThreshold} onChange={(e) => setForm({ ...form, partialFreeDeliveryThreshold: e.target.value })} />
-            </Field>
-            <Field label="نسبة الخصم (%)">
-              <input type="number" min="0" max="100" className="input ltr-input" dir="ltr" value={form.partialFreeDeliveryDiscount} onChange={(e) => setForm({ ...form, partialFreeDeliveryDiscount: e.target.value })} />
-            </Field>
-          </div>
-        )}
         <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'جاري الحفظ...' : 'حفظ الإعدادات'}</button>
       </form>
     </div>

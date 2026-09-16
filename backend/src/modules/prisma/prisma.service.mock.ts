@@ -70,6 +70,7 @@ export const createMockPrismaService = () => ({
     findUnique: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
+    delete: jest.fn(),
     count: jest.fn(),
   },
   orderItem: {
@@ -78,6 +79,7 @@ export const createMockPrismaService = () => ({
     create: jest.fn(),
     update: jest.fn(),
     count: jest.fn(),
+    groupBy: jest.fn(),
   },
   address: {
     findMany: jest.fn(),
@@ -88,13 +90,18 @@ export const createMockPrismaService = () => ({
     findUnique: jest.fn(),
     upsert: jest.fn(),
     delete: jest.fn(),
+    deleteMany: jest.fn(),
+    count: jest.fn(),
+    groupBy: jest.fn(),
   },
   review: {
     findMany: jest.fn(),
     findUnique: jest.fn(),
     create: jest.fn(),
     delete: jest.fn(),
+    deleteMany: jest.fn(),
     aggregate: jest.fn(),
+    groupBy: jest.fn(),
   },
   announcement: {
     findMany: jest.fn(),
@@ -108,7 +115,15 @@ export const createMockPrismaService = () => ({
     create: jest.fn(),
     updateMany: jest.fn(),
   },
+  storeWaitRequest: {
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+  },
   $connect: jest.fn(),
   $disconnect: jest.fn(),
   $transaction: jest.fn(),
+  $queryRaw: jest.fn().mockResolvedValue([{ nextval: BigInt(10001) }]),
 });

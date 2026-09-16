@@ -5,9 +5,10 @@ import { AdminOrdersController } from "./admin-orders.controller";
 import { CartModule } from "../cart/cart.module";
 import { DeliveryModule } from "../delivery/delivery.module";
 import { SettingsModule } from "../settings/settings.module";
+import { CustomerEventsModule } from "../customer-events/customer-events.module";
 
 @Module({
-  imports: [CartModule, DeliveryModule, SettingsModule],
+  imports: [CartModule, DeliveryModule, SettingsModule, CustomerEventsModule],
   controllers: [OrdersController, AdminOrdersController],
   providers: [OrdersService],
   exports: [OrdersService],

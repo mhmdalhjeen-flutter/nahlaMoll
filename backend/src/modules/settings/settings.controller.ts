@@ -1,10 +1,14 @@
 import { Controller, Get } from "@nestjs/common";
 import { Public } from "../../common/decorators/public.decorator";
 import { SettingsService } from "./settings.service";
+import { PaymentConfigService } from "../payment/payment-config.service";
 
 @Controller("settings")
 export class SettingsController {
-  constructor(private readonly settingsService: SettingsService) {}
+  constructor(
+    private readonly settingsService: SettingsService,
+    private readonly paymentConfig: PaymentConfigService,
+  ) {}
 
   @Public()
   @Get()
@@ -27,6 +31,6 @@ export class SettingsController {
   @Public()
   @Get("payment")
   async getPaymentSettings() {
-    return this.settingsService.getPaymentSettings();
+    return this.paymentConfig.getPublicPaymentConfig();
   }
 }

@@ -78,10 +78,32 @@ export function validateEnvForRuntime() {
   }
 
   if (isProduction) {
+    if (process.env.LOAD_TEST_MODE === "true") {
+      throw new Error("LOAD_TEST_MODE must not be enabled in production");
+    }
+    const rateLimitMax = parseInt(process.env.RATE_LIMIT_MAX || "100", 10);
+    if (rateLimitMax > 200) {
+      throw new Error(
+        "RATE_LIMIT_MAX must not exceed 200 in production (recommended: 100)",
+      );
+    }
     if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
       throw new Error(
         "JWT_SECRET must be at least 32 characters in production",
       );
+    }
+    const storageProvider = process.env.STORAGE_PROVIDER || "local";
+    if (storageProvider === "cloudinary") {
+      const hasCloudinaryUrl = Boolean(process.env.CLOUDINARY_URL?.trim());
+      const hasDiscreteCloudinary =
+        Boolean(process.env.CLOUDINARY_CLOUD_NAME?.trim()) &&
+        Boolean(process.env.CLOUDINARY_API_KEY?.trim()) &&
+        Boolean(process.env.CLOUDINARY_API_SECRET?.trim());
+      if (!hasCloudinaryUrl && !hasDiscreteCloudinary) {
+        throw new Error(
+          "CLOUDINARY_URL (or CLOUDINARY_CLOUD_NAME + CLOUDINARY_API_KEY + CLOUDINARY_API_SECRET) is required when STORAGE_PROVIDER=cloudinary in production",
+        );
+      }
     }
     const hasCorsList = Boolean(process.env.CORS_ORIGINS?.trim());
     const hasLegacyCors =

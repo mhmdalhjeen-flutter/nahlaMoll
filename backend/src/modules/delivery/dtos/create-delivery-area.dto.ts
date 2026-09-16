@@ -4,8 +4,10 @@ import {
   IsNumber,
   Min,
   IsBoolean,
+  IsEnum,
 } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { DeliveryAreaType, DeliveryRegion } from "@prisma/client";
 
 export class CreateDeliveryAreaDto {
   @ApiProperty({ description: "Area name (Arabic)" })
@@ -34,4 +36,26 @@ export class CreateDeliveryAreaDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean = true;
+
+  @ApiPropertyOptional({
+    description: "Area hierarchy type",
+    enum: DeliveryAreaType,
+    default: DeliveryAreaType.MAIN,
+  })
+  @IsOptional()
+  @IsEnum(DeliveryAreaType)
+  areaType?: DeliveryAreaType = DeliveryAreaType.MAIN;
+
+  @ApiPropertyOptional({ description: "Parent main area ID for sub-areas" })
+  @IsOptional()
+  @IsString()
+  parentId?: string;
+
+  @ApiPropertyOptional({
+    description: "Geographic region (required for main areas)",
+    enum: DeliveryRegion,
+  })
+  @IsOptional()
+  @IsEnum(DeliveryRegion)
+  region?: DeliveryRegion;
 }

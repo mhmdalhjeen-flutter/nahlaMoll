@@ -4,21 +4,28 @@ import { useCallback, useEffect, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { adminApi } from '@/lib/admin-api';
 import type { DeliveryArea } from '@/lib/types';
-import { formatPrice, getErrorMessage } from '@/lib/utils';
+import { getErrorMessage } from '@/lib/utils';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { EmptyState, ErrorState } from '@/components/ui/StateViews';
-import { ActiveBadge } from '@/components/ui/StatusBadge';
+import { EmptyState, ErrorState, LoadingGrid } from '@/components/ui/StateViews';
 import { useToast } from '@/stores/toast-store';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import {
+  DeliveryAreaGroupView,
+  DeliveryAreaModal,
+  getMainAreas,
+  groupDeliveryAreasForAdmin,
+  type DeliveryAreaFormState,
+} from '@/components/delivery/DeliveryAreaComponents';
 
 export default function DeliveryPage() {
   const [areas, setAreas] = useState<DeliveryArea[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editArea, setEditArea] = useState<DeliveryArea | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: '', deliveryFee: '', eligibleForFreeDelivery: true, isActive: true });
+  const [submitting, setSubmitting] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const toast = useToast((s) => s.show);
 
   const load = useCallback(async () => {
@@ -33,56 +40,64 @@ export default function DeliveryPage() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const resetForm = () => {
-    setForm({ name: '', deliveryFee: '', eligibleForFreeDelivery: true, isActive: true });
-    setEditId(null);
-    setShowForm(false);
+  const openAdd = () => {
+    setEditArea(null);
+    setModalOpen(true);
   };
 
-  const openEdit = (a: DeliveryArea) => {
-    setEditId(a.id);
-    setForm({
-      name: a.name,
-      deliveryFee: String(a.deliveryFee),
-      eligibleForFreeDelivery: a.eligibleForFreeDelivery,
-      isActive: a.isActive,
-    });
-    setShowForm(true);
+  const openEdit = (area: DeliveryArea) => {
+    setEditArea(area);
+    setModalOpen(true);
   };
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const closeModal = () => {
+    setModalOpen(false);
+    setEditArea(null);
+  };
+
+  const handleSubmit = async (form: DeliveryAreaFormState) => {
+    setSubmitting(true);
     const payload = {
-      name: form.name,
+      name: form.name.trim(),
       deliveryFee: parseFloat(form.deliveryFee),
-      eligibleForFreeDelivery: form.eligibleForFreeDelivery,
+      eligibleForFreeDelivery: true,
       isActive: form.isActive,
+      areaType: form.areaType,
+      parentId: form.areaType === 'MAIN' ? undefined : form.parentId || undefined,
+      region: form.areaType === 'MAIN' ? form.region || undefined : undefined,
     };
     try {
-      if (editId) {
-        await adminApi.updateDeliveryArea(editId, payload);
-        toast('تم التحديث', 'success');
+      if (editArea) {
+        await adminApi.updateDeliveryArea(editArea.id, payload);
+        toast('تم تحديث المنطقة بنجاح', 'success');
       } else {
         await adminApi.createDeliveryArea(payload);
-        toast('تم الإنشاء', 'success');
+        toast('تم إضافة المنطقة بنجاح', 'success');
       }
-      resetForm();
+      closeModal();
       load();
     } catch (err) {
       toast(getErrorMessage(err), 'error');
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const toggleActive = async (a: DeliveryArea) => {
+  const handleToggle = async (area: DeliveryArea, active: boolean) => {
+    setTogglingId(area.id);
     try {
-      if (a.isActive) await adminApi.deactivateDeliveryArea(a.id);
-      else await adminApi.activateDeliveryArea(a.id);
-      toast('تم التحديث', 'success');
+      if (active) await adminApi.activateDeliveryArea(area.id);
+      else await adminApi.deactivateDeliveryArea(area.id);
+      toast(active ? 'تم تفعيل المنطقة' : 'تم إيقاف المنطقة', 'success');
       load();
     } catch (err) {
       toast(getErrorMessage(err), 'error');
+    } finally {
+      setTogglingId(null);
     }
   };
 
@@ -90,7 +105,7 @@ export default function DeliveryPage() {
     if (!deleteId) return;
     try {
       await adminApi.deleteDeliveryArea(deleteId);
-      toast('تم الحذف', 'success');
+      toast('تم حذف المنطقة', 'success');
       setDeleteId(null);
       load();
     } catch (err) {
@@ -98,56 +113,61 @@ export default function DeliveryPage() {
     }
   };
 
+  const groups = groupDeliveryAreasForAdmin(areas);
+  const mainAreas = getMainAreas(areas);
+
   return (
-    <div>
+    <div className="pb-8">
       <PageHeader
         title="مناطق التوصيل"
         action={
-          <button type="button" className="btn-primary" onClick={() => { resetForm(); setShowForm(true); }}>
-            <Plus className="w-4 h-4 ml-2" /> منطقة جديدة
+          <button type="button" className="btn-primary min-h-[44px]" onClick={openAdd}>
+            <Plus className="w-4 h-4 ml-2" />
+            إضافة منطقة
           </button>
         }
       />
 
-      {showForm && (
-        <form onSubmit={submit} className="card mb-4 max-w-lg space-y-3">
-          <h2 className="font-bold">{editId ? 'تعديل المنطقة' : 'منطقة جديدة'}</h2>
-          <input className="input" placeholder="اسم المنطقة" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          <input type="number" step="0.01" min="0" className="input ltr-input" dir="ltr" placeholder="رسوم التوصيل" required value={form.deliveryFee} onChange={(e) => setForm({ ...form, deliveryFee: e.target.value })} />
-          <label className="flex items-center gap-2"><input type="checkbox" checked={form.eligibleForFreeDelivery} onChange={(e) => setForm({ ...form, eligibleForFreeDelivery: e.target.checked })} /> مؤهل للتوصيل المجاني</label>
-          <label className="flex items-center gap-2"><input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} /> نشط</label>
-          <div className="flex gap-2">
-            <button type="submit" className="btn-primary">حفظ</button>
-            <button type="button" className="btn-secondary" onClick={resetForm}>إلغاء</button>
-          </div>
-        </form>
+      {loading && <LoadingGrid count={4} />}
+      {error && <ErrorState message={error} onRetry={load} />}
+      {!loading && !error && areas.length === 0 && (
+        <EmptyState message="لا توجد مناطق توصيل. ابدأ بإضافة منطقة جديدة." />
       )}
 
-      {loading && <div className="card skeleton h-48" />}
-      {error && <ErrorState message={error} onRetry={load} />}
-      {!loading && !error && areas.length === 0 && <EmptyState message="لا توجد مناطق توصيل" />}
-
       {!loading && !error && areas.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {areas.map((a) => (
-            <div key={a.id} className="card">
-              <div className="flex justify-between items-start mb-2">
-                <h3 className="font-bold">{a.name}</h3>
-                <ActiveBadge active={a.isActive} />
-              </div>
-              <p className="text-sm text-gray-600">رسوم التوصيل: {formatPrice(a.deliveryFee)} ₪</p>
-              <p className="text-sm text-gray-600">{a.eligibleForFreeDelivery ? 'مؤهل للتوصيل المجاني' : 'غير مؤهل للتوصيل المجاني'}</p>
-              <div className="mt-3 flex gap-2">
-                <button type="button" className="text-primary-600 text-sm" onClick={() => openEdit(a)}>تعديل</button>
-                <button type="button" className="text-warning-600 text-sm" onClick={() => toggleActive(a)}>{a.isActive ? 'إلغاء تفعيل' : 'تفعيل'}</button>
-                <button type="button" className="text-error-600 text-sm" onClick={() => setDeleteId(a.id)}>حذف</button>
-              </div>
-            </div>
+        <div className="space-y-8">
+          {groups.map(({ main, children: subAreas }) => (
+            <DeliveryAreaGroupView
+              key={main.id}
+              main={main}
+              subAreas={subAreas}
+              togglingId={togglingId}
+              onEdit={openEdit}
+              onDelete={setDeleteId}
+              onToggleActive={handleToggle}
+            />
           ))}
         </div>
       )}
 
-      <ConfirmDialog open={!!deleteId} title="حذف المنطقة" message="هل أنت متأكد؟" danger confirmLabel="حذف" onConfirm={handleDelete} onCancel={() => setDeleteId(null)} />
+      <DeliveryAreaModal
+        open={modalOpen}
+        editArea={editArea}
+        mainAreas={mainAreas}
+        submitting={submitting}
+        onClose={closeModal}
+        onSubmit={handleSubmit}
+      />
+
+      <ConfirmDialog
+        open={!!deleteId}
+        title="حذف المنطقة"
+        message="هل أنت متأكد من حذف هذه المنطقة؟ لا يمكن التراجع عن هذا الإجراء."
+        danger
+        confirmLabel="حذف"
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteId(null)}
+      />
     </div>
   );
 }

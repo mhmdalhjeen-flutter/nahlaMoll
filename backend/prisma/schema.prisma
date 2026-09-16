@@ -38,6 +38,18 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum StoreWaitRequestType {
+  ADD_TO_CART
+  CHECKOUT
+}
+
+enum StoreWaitRequestStatus {
+  WAITING
+  NOTIFIED
+  CANCELLED
+  COMPLETED
+}
+
 enum PaymentStatus {
   PENDING
   SUBMITTED
@@ -53,6 +65,53 @@ enum ProductCondition {
 enum OfferType {
   PERCENTAGE
   FIXED_AMOUNT
+}
+
+enum DeliveryAreaType {
+  MAIN
+  SUB_NEAR
+  SUB_FAR
+}
+
+enum DeliveryRegion {
+  NORTH
+  GAZA
+  MIDDLE
+  SOUTH
+}
+
+enum CustomerInteractionType {
+  // Store assistant (chatbot)
+  CHAT_SEARCH
+  CHAT_PRODUCT_CLICK
+  CHAT_INTENT
+  CHAT_CATEGORY_CLICK
+  CHAT_CATEGORY_INTERACTION
+  CHAT_BASKET_REQUEST
+  CHAT_BASKET_ACCEPTED
+  CHAT_BASKET_PRODUCT_SELECTION
+  // Store-wide behavioral signals (Phase 0 foundation)
+  PRODUCT_VIEWED
+  PRODUCT_CLICKED
+  SEARCH_QUERY
+  SEARCH_RESULT_CLICK
+  SEARCH_NO_RESULTS
+  CATEGORY_VIEWED
+  CATEGORY_CLICKED
+  CART_ITEM_ADDED
+  CART_ITEM_REMOVED
+  CART_QUANTITY_CHANGED
+  FAVORITE_ADDED
+  FAVORITE_REMOVED
+  CHECKOUT_STARTED
+  ORDER_CREATED
+  ORDER_COMPLETED
+  ORDER_CANCELLED
+  RECOMMENDATION_SHOWN
+  RECOMMENDATION_CLICKED
+  RECOMMENDATION_ADDED_TO_CART
+  RECOMMENDATION_PURCHASED
+  RECOMMENDATION_DISMISSED
 }
 
 model User {
@@ -74,6 +133,9 @@ model User {
   reviews         Review[]
   supportMessages SupportMessage[]
   auditLogs       AuditLog[]
+  storeWaitRequests StoreWaitRequest[]
+  customerInteractions CustomerInteraction[]
+  notificationPreferences CustomerNotificationPreferences?
 
   @@index([phoneNumber])
   @@index([email])
@@ -112,20 +174,28 @@ model Address {
 }
 
 model DeliveryArea {
-  id                      String   @id @default(cuid())
+  id                      String           @id @default(cuid())
   name                    String // Arabic
   nameEn                  String? // English for admin
   deliveryFee             Decimal
-  eligibleForFreeDelivery Boolean  @default(true)
-  isActive                Boolean  @default(true)
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  eligibleForFreeDelivery Boolean          @default(true)
+  isActive                Boolean          @default(true)
+  areaType                DeliveryAreaType @default(MAIN)
+  region                  DeliveryRegion?
+  parentId                String?
+  parent                  DeliveryArea?    @relation("DeliveryAreaHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children                DeliveryArea[]   @relation("DeliveryAreaHierarchy")
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
 
   // Relations
   addresses Address[]
   orders    Order[]
 
   @@index([isActive])
+  @@index([parentId])
+  @@index([areaType])
+  @@index([region])
 }
 
 // ============================================
@@ -138,6 +208,7 @@ model Category {
   nameEn      String? // English for admin
   slug        String     @unique
   description String?
+  image       String?
   isActive    Boolean    @default(true)
   parentId    String?
   parent      Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
@@ -160,7 +231,9 @@ model Product {
   categoryId        String
   category          Category            @relation(fields: [categoryId], references: [id])
   price             Decimal
-  freeDeliveryValue Decimal             @default(0)
+  freeDeliveryValue         Decimal @default(0) // MAIN area contribution (%)
+  freeDeliveryValueSubNear  Decimal @default(0) // SUB_NEAR contribution (%)
+  freeDeliveryValueSubFar   Decimal @default(0) // SUB_FAR contribution (%)
   availability      ProductAvailability @default(UNLIMITED)
   stock             Int                 @default(0)
   isAvailable       Boolean             @default(true)
@@ -269,6 +342,7 @@ model Order {
   items OrderItem[]
 
   @@index([customerId])
+  @@index([customerId, createdAt(sort: Desc)])
   @@index([status])
   @@index([paymentStatus])
   @@index([orderNumber])
@@ -279,9 +353,9 @@ model OrderItem {
   id                String   @id @default(cuid())
   orderId           String
   order             Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  productId         String
+  productId         String?
   productName       String // Snapshot at time of order
-  product           Product  @relation(fields: [productId], references: [id])
+  product           Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
   quantity          Int
   price             Decimal // Snapshot at time of order
   freeDeliveryValue Decimal // Snapshot at time of order
@@ -309,6 +383,55 @@ model Favorite {
   @@index([productId])
 }
 
+// Structured shopping signals from the store assistant (not raw chat transcripts).
+model CustomerInteraction {
+  id         String                  @id @default(cuid())
+  userId     String?
+  user       User?                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId  String?
+  type       CustomerInteractionType
+  searchTerm String?
+  productId  String?
+  categoryId String?
+  intent     String?
+  context    String?
+  metadata   Json?
+  source     String                  @default("store")
+  createdAt  DateTime                @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, type])
+  @@index([sessionId, createdAt])
+  @@index([productId])
+}
+
+// Per-customer notification delivery preferences (future delivery engine reads these).
+model CustomerNotificationPreferences {
+  id                      String   @id @default(cuid())
+  userId                  String   @unique
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  orderUpdates            Boolean  @default(true)
+  freeDelivery            Boolean  @default(true)
+  favorites               Boolean  @default(false)
+  offers                  Boolean  @default(false)
+  personalRecommendations Boolean  @default(false)
+  newProducts             Boolean  @default(false)
+  abuAlaaNews             Boolean  @default(false)
+
+  pushEnabled             Boolean  @default(false)
+  emailEnabled            Boolean  @default(false)
+
+  doNotDisturbEnabled     Boolean  @default(false)
+  doNotDisturbFrom        String?  // HH:mm local time, e.g. "22:00"
+  doNotDisturbUntil       String?  // HH:mm local time, e.g. "08:00"
+
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@index([userId])
+}
+
 model Review {
   id        String   @id @default(cuid())
   userId    String
@@ -322,12 +445,34 @@ model Review {
 
   @@unique([userId, productId])
   @@index([productId])
+  @@index([productId, createdAt(sort: Desc)])
   @@index([rating])
 }
 
 // ============================================
 // STORE SETTINGS & ANNOUNCEMENTS
 // ============================================
+
+enum PaymentMethodType {
+  BANK_OF_PALESTINE
+  PALPAY
+  JAWWAL_PAY
+}
+
+model PaymentAccount {
+  id            String            @id @default(cuid())
+  method        PaymentMethodType
+  accountName   String
+  accountNumber String
+  qrImageUrl    String?
+  isActive      Boolean           @default(false)
+  sortOrder     Int               @default(0)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([method])
+  @@index([method, isActive])
+}
 
 model Settings {
   id               String  @id @default(cuid())
@@ -347,12 +492,21 @@ model Settings {
   partialFreeDeliveryThreshold Decimal
   partialFreeDeliveryDiscount  Int     @default(50)
 
-  // Payment instructions
+  // Payment instructions (legacy manual transfer — synced from active accounts)
   paymentInstructions     String? // Arabic
   paymentInstructionsEn   String? // English
   paymentQrImage          String?
   paymentAccountDetails   String? // Arabic
   paymentAccountDetailsEn String? // English
+
+  // Cash on delivery
+  codEnabled Boolean @default(false)
+  codNote    String?
+
+  // Electronic payment method toggles
+  bankOfPalestineEnabled Boolean @default(false)
+  palPayEnabled          Boolean @default(false)
+  jawwalPayEnabled       Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -364,6 +518,7 @@ model Announcement {
   titleEn   String? // English
   content   String // Arabic
   contentEn String? // English
+  image     String?
   isActive  Boolean   @default(true)
   priority  Int       @default(0)
   startDate DateTime
@@ -375,10 +530,6 @@ model Announcement {
   @@index([startDate])
   @@index([endDate])
 }
-
-// ============================================
-// SUPPORT & ANALYTICS
-// ============================================
 
 model SupportMessage {
   id        String   @id @default(cuid())
@@ -395,6 +546,20 @@ model SupportMessage {
   @@index([userId])
   @@index([orderId])
   @@index([isRead])
+}
+
+model StoreWaitRequest {
+  id        String                 @id @default(cuid())
+  userId    String
+  user      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      StoreWaitRequestType
+  status    StoreWaitRequestStatus @default(WAITING)
+  payload   Json
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+
+  @@index([userId, status])
+  @@index([status])
 }
 
 model AuditLog {

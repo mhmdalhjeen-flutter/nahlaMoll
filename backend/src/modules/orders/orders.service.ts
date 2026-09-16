@@ -1,15 +1,18 @@
 import { Injectable } from "@nestjs/common";
 import {
+  CustomerInteractionType,
+  DeliveryAreaType,
   OrderStatus,
   PaymentStatus,
   Prisma,
   ProductAvailability,
 } from "@prisma/client";
-import { randomBytes } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import { CartService } from "../cart/cart.service";
 import { DeliveryService } from "../delivery/delivery.service";
 import { SettingsService } from "../settings/settings.service";
+import { CustomerEventsService } from "../customer-events/customer-events.service";
+import { CUSTOMER_EVENT_SOURCES } from "../customer-events/customer-events.constants";
 import { CreateOrderDto } from "./dtos/create-order.dto";
 import { UpdateOrderStatusDto } from "./dtos/update-order-status.dto";
 import { SubmitPaymentDto } from "./dtos/submit-payment.dto";
@@ -20,6 +23,14 @@ import {
   StoreClosedException,
   ValidationException,
 } from "../../common/exceptions/business.exception";
+import { calculateProductUnitPrice } from "../../common/utils/product-pricing.util";
+import {
+  canAdminCancelOrder,
+  canCustomerCancelOrder,
+  canDeleteOrder,
+  isCashOnDeliveryOrder,
+} from "./order.constants";
+import { resolveFreeDeliveryContribution } from "../../common/utils/product-free-delivery.util";
 
 type CartItemWithRelations = Prisma.CartItemGetPayload<{
   include: {
@@ -29,7 +40,7 @@ type CartItemWithRelations = Prisma.CartItemGetPayload<{
 }>;
 
 const orderInclude = {
-  items: { include: { product: true } },
+  items: true,
   deliveryArea: true,
   customer: {
     select: {
@@ -48,6 +59,7 @@ export class OrdersService {
     private cartService: CartService,
     private deliveryService: DeliveryService,
     private settingsService: SettingsService,
+    private customerEventsService: CustomerEventsService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto) {
@@ -69,7 +81,7 @@ export class OrdersService {
       throw new ValidationException("Delivery address is required");
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const order = await this.prisma.$transaction(async (tx) => {
       const cartItems = await tx.cartItem.findMany({
         where: { userId },
         include: {
@@ -96,7 +108,7 @@ export class OrdersService {
       const score = cartItems.reduce(
         (sum, item) =>
           sum.plus(
-            new Prisma.Decimal(item.product.freeDeliveryValue).times(
+            resolveFreeDeliveryContribution(item.product, area.areaType).times(
               item.quantity,
             ),
           ),
@@ -111,7 +123,7 @@ export class OrdersService {
       const subtotal = new Prisma.Decimal(totals.subtotal);
       const deliveryFee = new Prisma.Decimal(delivery.deliveryFee);
       const total = subtotal.plus(deliveryFee);
-      const orderNumber = this.generateOrderNumber();
+      const orderNumber = await this.generateOrderNumber(tx);
 
       const order = await tx.order.create({
         data: {
@@ -127,7 +139,9 @@ export class OrdersService {
           deliveryAddress: dto.deliveryAddress.trim(),
           notes: dto.notes?.trim() || null,
           items: {
-            create: cartItems.map((item) => this.buildOrderItemSnapshot(item)),
+            create: cartItems.map((item) =>
+              this.buildOrderItemSnapshot(item, area.areaType),
+            ),
           },
         },
         include: orderInclude,
@@ -137,17 +151,41 @@ export class OrdersService {
 
       return order;
     });
+
+    this.customerEventsService.recordInternal({
+      userId,
+      type: CustomerInteractionType.ORDER_CREATED,
+      metadata: {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        productIds: order.items.map((item) => item.productId).filter(Boolean),
+      },
+      source: CUSTOMER_EVENT_SOURCES.SERVER,
+    });
+
+    return order;
   }
 
-  async findAllForCustomer(userId: string) {
-    return this.prisma.order.findMany({
-      where: { customerId: userId },
-      include: {
-        items: true,
-        deliveryArea: { select: { id: true, name: true } },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+  async findAllForCustomer(userId: string, page = 1, limit = 50) {
+    const pageSize = Math.min(Math.max(limit, 1), 100);
+    const skip = (Math.max(page, 1) - 1) * pageSize;
+    const where = { customerId: userId };
+
+    const [items, total] = await Promise.all([
+      this.prisma.order.findMany({
+        where,
+        include: {
+          items: true,
+          deliveryArea: { select: { id: true, name: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: pageSize,
+      }),
+      this.prisma.order.count({ where }),
+    ]);
+
+    return { items, total, page: Math.max(page, 1), pageSize };
   }
 
   async findOneForCustomer(userId: string, orderId: string) {
@@ -163,11 +201,21 @@ export class OrdersService {
     return order;
   }
 
-  async findAllAdmin() {
-    return this.prisma.order.findMany({
-      include: orderInclude,
-      orderBy: { createdAt: "desc" },
-    });
+  async findAllAdmin(page = 1, limit = 50) {
+    const pageSize = Math.min(Math.max(limit, 1), 100);
+    const skip = (Math.max(page, 1) - 1) * pageSize;
+
+    const [items, total] = await Promise.all([
+      this.prisma.order.findMany({
+        include: orderInclude,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: pageSize,
+      }),
+      this.prisma.order.count(),
+    ]);
+
+    return { items, total, page: Math.max(page, 1), pageSize };
   }
 
   async findOneAdmin(orderId: string) {
@@ -184,16 +232,112 @@ export class OrdersService {
   }
 
   async updateStatusAdmin(orderId: string, dto: UpdateOrderStatusDto) {
-    await this.findOneAdmin(orderId);
+    const order = await this.findOneAdmin(orderId);
 
-    return this.prisma.order.update({
+    if (
+      dto.status === OrderStatus.CANCELLED &&
+      !canAdminCancelOrder(order.status)
+    ) {
+      throw new ValidationException("لا يمكن إلغاء هذا الطلب في حالته الحالية");
+    }
+
+    const data: Prisma.OrderUpdateInput = {
+      status: dto.status,
+      adminPaymentNotes: dto.adminNotes?.trim() || undefined,
+    };
+
+    if (
+      dto.status === OrderStatus.DELIVERED &&
+      isCashOnDeliveryOrder(order) &&
+      order.paymentStatus === PaymentStatus.PENDING
+    ) {
+      data.paymentStatus = PaymentStatus.VERIFIED;
+    }
+
+    const updated = await this.prisma.order.update({
       where: { id: orderId },
-      data: {
-        status: dto.status,
-        adminPaymentNotes: dto.adminNotes?.trim() || undefined,
-      },
+      data,
       include: orderInclude,
     });
+
+    if (dto.status === OrderStatus.DELIVERED) {
+      this.customerEventsService.recordInternal({
+        userId: updated.customerId,
+        type: CustomerInteractionType.ORDER_COMPLETED,
+        metadata: {
+          orderId: updated.id,
+          orderNumber: updated.orderNumber,
+        },
+        source: CUSTOMER_EVENT_SOURCES.SERVER,
+      });
+    }
+
+    if (dto.status === OrderStatus.CANCELLED) {
+      this.customerEventsService.recordInternal({
+        userId: updated.customerId,
+        type: CustomerInteractionType.ORDER_CANCELLED,
+        metadata: {
+          orderId: updated.id,
+          orderNumber: updated.orderNumber,
+          cancelledBy: "admin",
+        },
+        source: CUSTOMER_EVENT_SOURCES.SERVER,
+      });
+    }
+
+    return updated;
+  }
+
+  async cancelForCustomer(userId: string, orderId: string) {
+    const order = await this.findOneForCustomer(userId, orderId);
+
+    if (!canCustomerCancelOrder(order.status)) {
+      throw new ValidationException("لا يمكن إلغاء هذا الطلب في حالته الحالية");
+    }
+
+    const cancelled = await this.prisma.order.update({
+      where: { id: orderId },
+      data: { status: OrderStatus.CANCELLED },
+      include: orderInclude,
+    });
+
+    this.customerEventsService.recordInternal({
+      userId,
+      type: CustomerInteractionType.ORDER_CANCELLED,
+      metadata: {
+        orderId: cancelled.id,
+        orderNumber: cancelled.orderNumber,
+      },
+      source: CUSTOMER_EVENT_SOURCES.SERVER,
+    });
+
+    return cancelled;
+  }
+
+  async deleteForCustomer(userId: string, orderId: string) {
+    const order = await this.findOneForCustomer(userId, orderId);
+
+    if (!canDeleteOrder(order.status)) {
+      throw new ValidationException(
+        "يمكن حذف الطلبات المُسلّمة أو الملغاة فقط",
+      );
+    }
+
+    await this.prisma.order.delete({ where: { id: orderId } });
+    return { deleted: true, orderId };
+  }
+
+  async deleteAdmin(orderId: string) {
+    const order = await this.findOneAdmin(orderId);
+
+    if (!canDeleteOrder(order.status)) {
+      throw new ValidationException(
+        "يمكن حذف الطلبات المُسلّمة أو الملغاة فقط",
+      );
+    }
+
+    await this.prisma.order.delete({ where: { id: orderId } });
+    return { deleted: true, orderId };
   }
 
   async submitPayment(userId: string, orderId: string, dto: SubmitPaymentDto) {
@@ -357,19 +501,22 @@ export class OrdersService {
 
   buildOrderItemSnapshot(
     item: CartItemWithRelations,
+    areaType: DeliveryAreaType = DeliveryAreaType.MAIN,
   ): Prisma.OrderItemCreateWithoutOrderInput {
-    const productPrice = new Prisma.Decimal(item.product.price);
-    const variantAdjustment = item.variant
-      ? new Prisma.Decimal(item.variant.priceAdjustment)
-      : new Prisma.Decimal(0);
-    const unitPrice = productPrice.plus(variantAdjustment);
+    const { unitPrice } = calculateProductUnitPrice(
+      item.product,
+      item.variant?.priceAdjustment ?? 0,
+    );
 
     return {
       product: { connect: { id: item.productId } },
       productName: item.product.name,
       quantity: item.quantity,
-      price: unitPrice,
-      freeDeliveryValue: new Prisma.Decimal(item.product.freeDeliveryValue),
+      price: new Prisma.Decimal(unitPrice),
+      freeDeliveryValue: resolveFreeDeliveryContribution(
+        item.product,
+        areaType,
+      ),
       variantInfo: item.variant
         ? JSON.stringify({
             id: item.variant.id,
@@ -382,17 +529,12 @@ export class OrdersService {
     };
   }
 
-  private generateOrderNumber(): string {
-    const now = new Date();
-    const datePart = [
-      now.getFullYear(),
-      String(now.getMonth() + 1).padStart(2, "0"),
-      String(now.getDate()).padStart(2, "0"),
-      String(now.getHours()).padStart(2, "0"),
-      String(now.getMinutes()).padStart(2, "0"),
-      String(now.getSeconds()).padStart(2, "0"),
-    ].join("");
-    const suffix = randomBytes(3).toString("hex").toUpperCase();
-    return `ORD-${datePart}-${suffix}`;
+  private async generateOrderNumber(
+    tx: Prisma.TransactionClient,
+  ): Promise<string> {
+    const rows = await tx.$queryRaw<Array<{ nextval: bigint }>>`
+      SELECT nextval('"Order_number_seq"') AS nextval
+    `;
+    return String(rows[0].nextval);
   }
 }

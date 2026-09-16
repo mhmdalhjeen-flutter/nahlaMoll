@@ -1,8 +1,11 @@
 import { Injectable } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { CustomerInteractionType, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { ProductsService } from "../products/products.service";
 import { DeliveryService } from "../delivery/delivery.service";
+import { CustomerEventsService } from "../customer-events/customer-events.service";
+import { CUSTOMER_EVENT_SOURCES } from "../customer-events/customer-events.constants";
+import { calculateProductUnitPrice } from "../../common/utils/product-pricing.util";
 import {
   ResourceNotFoundException,
   ValidationException,
@@ -21,6 +24,7 @@ export class CartService {
     private prisma: PrismaService,
     private productsService: ProductsService,
     private deliveryService: DeliveryService,
+    private customerEventsService: CustomerEventsService,
   ) {}
 
   private get baseInclude() {
@@ -95,14 +99,28 @@ export class CartService {
         throw new InsufficientStockException(product.name, newQuantity, 0);
       }
 
-      return this.prisma.cartItem.update({
+      const updated = await this.prisma.cartItem.update({
         where: { id: existingItem.id },
         data: { quantity: newQuantity },
         include: this.baseInclude,
       });
+
+      this.customerEventsService.recordInternal({
+        userId,
+        type: CustomerInteractionType.CART_QUANTITY_CHANGED,
+        productId,
+        metadata: {
+          quantity: newQuantity,
+          previousQuantity: existingItem.quantity,
+          variantId: variantId ?? null,
+        },
+        source: CUSTOMER_EVENT_SOURCES.SERVER,
+      });
+
+      return updated;
     }
 
-    return this.prisma.cartItem.create({
+    const created = await this.prisma.cartItem.create({
       data: {
         userId,
         productId,
@@ -111,6 +129,16 @@ export class CartService {
       },
       include: this.baseInclude,
     });
+
+    this.customerEventsService.recordInternal({
+      userId,
+      type: CustomerInteractionType.CART_ITEM_ADDED,
+      productId,
+      metadata: { quantity, variantId: variantId ?? null },
+      source: CUSTOMER_EVENT_SOURCES.SERVER,
+    });
+
+    return created;
   }
 
   async updateCartItem(userId: string, cartItemId: string, quantity: number) {
@@ -140,11 +168,25 @@ export class CartService {
       );
     }
 
-    return this.prisma.cartItem.update({
+    const updated = await this.prisma.cartItem.update({
       where: { id: cartItemId },
       data: { quantity },
       include: this.baseInclude,
     });
+
+    this.customerEventsService.recordInternal({
+      userId,
+      type: CustomerInteractionType.CART_QUANTITY_CHANGED,
+      productId: cartItem.productId,
+      metadata: {
+        quantity,
+        previousQuantity: cartItem.quantity,
+        variantId: cartItem.variantId,
+      },
+      source: CUSTOMER_EVENT_SOURCES.SERVER,
+    });
+
+    return updated;
   }
 
   async removeFromCart(userId: string, cartItemId: string) {
@@ -156,10 +198,20 @@ export class CartService {
       throw new ResourceNotFoundException("Cart item", cartItemId);
     }
 
-    return this.prisma.cartItem.delete({
+    const removed = await this.prisma.cartItem.delete({
       where: { id: cartItemId },
       include: this.baseInclude,
     });
+
+    this.customerEventsService.recordInternal({
+      userId,
+      type: CustomerInteractionType.CART_ITEM_REMOVED,
+      productId: cartItem.productId,
+      metadata: { variantId: cartItem.variantId },
+      source: CUSTOMER_EVENT_SOURCES.SERVER,
+    });
+
+    return removed;
   }
 
   async clearCart(userId: string) {
@@ -173,14 +225,13 @@ export class CartService {
     let totalItems = 0;
 
     cartItems.forEach((item) => {
-      const productPrice = new Prisma.Decimal(item.product.price);
-      const variantAdjustment = item.variant
-        ? new Prisma.Decimal(item.variant.priceAdjustment)
-        : new Prisma.Decimal(0);
-      const unitPrice = productPrice.plus(variantAdjustment);
+      const { unitPrice } = calculateProductUnitPrice(
+        item.product,
+        item.variant?.priceAdjustment ?? 0,
+      );
       const quantity = item.quantity;
 
-      subtotal = subtotal.plus(unitPrice.times(quantity));
+      subtotal = subtotal.plus(new Prisma.Decimal(unitPrice).times(quantity));
       totalItems += quantity;
     });
 

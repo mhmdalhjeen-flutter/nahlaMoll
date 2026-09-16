@@ -1,4 +1,5 @@
 const { assertProductionApiUrl, getImageRemotePatterns } = require('./next.config.helpers');
+const withSerwistInit = require('@serwist/next').default;
 
 assertProductionApiUrl();
 
@@ -19,4 +20,14 @@ if (process.env.NODE_ENV === 'development') {
   }
 }
 
-module.exports = nextConfig;
+const withSerwist = withSerwistInit({
+  swSrc: 'src/sw.ts',
+  swDest: 'public/sw.js',
+  disable: process.env.NODE_ENV === 'development',
+  additionalPrecacheEntries: [{ url: '/offline', revision: String(Date.now()) }],
+  cacheOnNavigation: false,
+  reloadOnOnline: true,
+  globPublicPatterns: ['icons/**/*'],
+});
+
+module.exports = withSerwist(nextConfig);
