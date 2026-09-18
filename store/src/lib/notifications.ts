@@ -1,8 +1,30 @@
+import type { QueryClient } from '@tanstack/react-query';
 import type {
   CustomerNotification,
   CustomerNotificationTargetType,
   CustomerNotificationType,
+  PaginatedList,
 } from './types';
+
+export const NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY = [
+  'notifications-unread-count',
+] as const;
+
+export const DEFAULT_NOTIFICATIONS_PAGE = 1;
+export const DEFAULT_NOTIFICATIONS_LIMIT = 20;
+
+export function notificationsListQueryKey(
+  page = DEFAULT_NOTIFICATIONS_PAGE,
+  limit = DEFAULT_NOTIFICATIONS_LIMIT,
+) {
+  return ['notifications', page, limit] as const;
+}
+
+/** Remove cached notification data on logout (customer-scoped). */
+export function clearNotificationQueries(queryClient: QueryClient) {
+  queryClient.removeQueries({ queryKey: ['notifications'] });
+  queryClient.removeQueries({ queryKey: NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY });
+}
 
 export interface NotificationGroups {
   today: CustomerNotification[];
@@ -76,7 +98,7 @@ export function formatRelativeTimeAr(iso: string, now: Date = new Date()): strin
 }
 
 export function getNotificationHref(notification: CustomerNotification): string | null {
-  const { targetType, targetId } = notification;
+  const { targetType, targetId, type, title } = notification;
   if (!targetId && targetType !== 'cart' && targetType !== 'none') return null;
 
   switch (targetType as CustomerNotificationTargetType) {
@@ -88,9 +110,42 @@ export function getNotificationHref(notification: CustomerNotification): string 
       return targetId ? `/products/${targetId}` : '/products?section=offers';
     case 'cart':
       return '/cart';
+    case 'none':
+      if (type === 'system' && title === 'رد الدعم الفني') {
+        return '/support';
+      }
+      if (type === 'system' && title === 'إعلان جديد') {
+        return '/announcements';
+      }
+      return null;
     default:
       return null;
   }
+}
+
+export function patchNotificationListRead(
+  list: PaginatedList<CustomerNotification> | undefined,
+  notificationId: string,
+): PaginatedList<CustomerNotification> | undefined {
+  if (!list) return list;
+
+  return {
+    ...list,
+    items: list.items.map((item) =>
+      item.id === notificationId ? { ...item, isRead: true } : item,
+    ),
+  };
+}
+
+export function patchNotificationListAllRead(
+  list: PaginatedList<CustomerNotification> | undefined,
+): PaginatedList<CustomerNotification> | undefined {
+  if (!list) return list;
+
+  return {
+    ...list,
+    items: list.items.map((item) => ({ ...item, isRead: true })),
+  };
 }
 
 export type NotificationVisualTone = 'default' | 'success' | 'warning';

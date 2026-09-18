@@ -5,6 +5,8 @@ import {
   formatRelativeTimeAr,
   getNotificationHref,
   groupNotificationsByDay,
+  patchNotificationListAllRead,
+  patchNotificationListRead,
 } from './notifications';
 
 function n(partial: Partial<CustomerNotification> & Pick<CustomerNotification, 'id'>): CustomerNotification {
@@ -62,5 +64,49 @@ describe('notifications utils', () => {
 
   it('returns null for missing target id', () => {
     expect(getNotificationHref(n({ id: '1', targetType: 'order', targetId: null }))).toBeNull();
+  });
+
+  it('resolves support and announcement system notification hrefs', () => {
+    expect(
+      getNotificationHref(
+        n({
+          id: '1',
+          type: 'system',
+          title: 'رد الدعم الفني',
+          targetType: 'none',
+          targetId: 'msg-1',
+        }),
+      ),
+    ).toBe('/support');
+    expect(
+      getNotificationHref(
+        n({
+          id: '2',
+          type: 'system',
+          title: 'إعلان جديد',
+          targetType: 'none',
+          targetId: 'ann-1',
+        }),
+      ),
+    ).toBe('/announcements');
+  });
+
+  it('patches list read state for one item and all items', () => {
+    const list = {
+      items: [
+        n({ id: '1', isRead: false }),
+        n({ id: '2', isRead: false }),
+      ],
+      total: 2,
+      page: 1,
+      pageSize: 20,
+    };
+
+    const oneRead = patchNotificationListRead(list, '1');
+    expect(oneRead?.items[0]?.isRead).toBe(true);
+    expect(oneRead?.items[1]?.isRead).toBe(false);
+
+    const allRead = patchNotificationListAllRead(list);
+    expect(allRead?.items.every((item) => item.isRead)).toBe(true);
   });
 });

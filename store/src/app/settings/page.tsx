@@ -1,5 +1,8 @@
 'use client';
 
+import { useQueryClient } from '@tanstack/react-query';
+import { clearNotificationQueries } from '@/lib/notifications';
+
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -31,11 +34,13 @@ export default function SettingsPage() {
 
 function SettingsContent() {
   const router = useRouter();
+  const qc = useQueryClient();
   const logout = useAuthStore((s) => s.logout);
   const toast = useToastStore((s) => s.show);
   const [logoutOpen, setLogoutOpen] = useState(false);
 
   const handleLogout = () => {
+    clearNotificationQueries(qc);
     logout();
     toast('تم تسجيل الخروج', 'info');
     setLogoutOpen(false);

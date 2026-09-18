@@ -3,10 +3,14 @@ import { PrismaService } from "../prisma/prisma.service";
 import { CreateSupportMessageDto } from "./dtos/create-support-message.dto";
 import { AdminReplySupportDto } from "./dtos/admin-reply-support.dto";
 import { ResourceNotFoundException } from "../../common/exceptions/business.exception";
+import { NotificationEventService } from "../notifications/notification-event.service";
 
 @Injectable()
 export class SupportService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationEventService: NotificationEventService,
+  ) {}
 
   async findMine(userId: string) {
     return this.prisma.supportMessage.findMany({
@@ -67,7 +71,7 @@ export class SupportService {
       data: { isRead: true },
     });
 
-    return this.prisma.supportMessage.create({
+    const message = await this.prisma.supportMessage.create({
       data: {
         userId,
         subject: dto.subject?.trim() || "رد الإدارة",
@@ -75,6 +79,13 @@ export class SupportService {
         isAdmin: true,
       },
     });
+
+    void this.notificationEventService.emitSupportReply({
+      userId,
+      supportMessageId: message.id,
+    });
+
+    return message;
   }
 
   async markThreadRead(userId: string) {

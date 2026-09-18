@@ -10,6 +10,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { usePendingAuthStore } from '@/stores/pending-auth-store';
 import { storeApi } from '@/lib/store-api';
 import { NOTIFICATIONS_API_ENABLED } from '@/lib/notifications-config';
+import { NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY } from '@/lib/notifications';
 import {
   countOrdersNeedingAttention,
   FREE_DELIVERY_MENU_LINK,
@@ -195,7 +196,7 @@ export function SideMenu() {
   });
 
   const { data: unreadData } = useQuery({
-    queryKey: ['notifications-unread-count'],
+    queryKey: NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY,
     queryFn: storeApi.getNotificationUnreadCount,
     enabled: NOTIFICATIONS_API_ENABLED && isAuthenticated && sideMenuOpen,
     staleTime: 60_000,

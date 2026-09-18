@@ -105,10 +105,9 @@ function resolveVariant(
 }
 
 export function ToastContainer() {
-  const { toasts, dismiss } = useToastStore();
-
-  const topToasts = toasts.filter((t) => t.placement === 'top');
-  const bottomToasts = toasts.filter((t) => t.placement === 'bottom');
+  const topActive = useToastStore((s) => s.top.active);
+  const bottomActive = useToastStore((s) => s.bottom.active);
+  const dismiss = useToastStore((s) => s.dismiss);
 
   return (
     <>
@@ -119,33 +118,33 @@ export function ToastContainer() {
           'left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-[400px]',
         )}
       >
-        {topToasts.map((t) => (
+        {topActive && (
           <ToastItem
-            key={t.id}
-            id={t.id}
-            message={t.message}
-            type={t.type}
-            action={t.action}
+            key={topActive.id}
+            id={topActive.id}
+            message={topActive.message}
+            type={topActive.type}
+            action={topActive.action}
             onDismiss={dismiss}
             placement="top"
-            variant={resolveVariant(t.type, t.placement)}
+            variant={resolveVariant(topActive.type, topActive.placement)}
           />
-        ))}
+        )}
       </div>
 
       <div className="fixed bottom-20 md:bottom-6 left-4 right-4 md:left-auto md:right-6 z-[100] flex flex-col gap-2 pointer-events-none md:max-w-[400px] md:w-[calc(100%-2rem)]">
-        {bottomToasts.map((t) => (
+        {bottomActive && (
           <ToastItem
-            key={t.id}
-            id={t.id}
-            message={t.message}
-            type={t.type}
-            action={t.action}
+            key={bottomActive.id}
+            id={bottomActive.id}
+            message={bottomActive.message}
+            type={bottomActive.type}
+            action={bottomActive.action}
             onDismiss={dismiss}
             placement="bottom"
-            variant={resolveVariant(t.type, t.placement)}
+            variant={resolveVariant(bottomActive.type, bottomActive.placement)}
           />
-        ))}
+        )}
       </div>
     </>
   );

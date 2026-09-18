@@ -1,9 +1,9 @@
 /**
- * Flip to true when GET /notifications is deployed on the backend.
- * Until then the inbox shows an honest empty state — no fake notifications.
+ * Customer notification inbox API (GET /notifications, unread-count, mark-read).
+ * Enabled by default; set NEXT_PUBLIC_NOTIFICATIONS_ENABLED=false to disable.
  */
 export const NOTIFICATIONS_API_ENABLED =
-  process.env.NEXT_PUBLIC_NOTIFICATIONS_ENABLED === 'true';
+  process.env.NEXT_PUBLIC_NOTIFICATIONS_ENABLED !== 'false';
 
 /**
  * Notification preferences API — implemented at GET/PATCH /notifications/preferences.

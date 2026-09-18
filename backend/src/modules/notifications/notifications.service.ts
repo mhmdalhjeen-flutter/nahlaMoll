@@ -1,13 +1,25 @@
 import { Injectable } from "@nestjs/common";
+import {
+  clampPageLimit,
+  paginateSkip,
+  type PaginatedResult,
+} from "../../common/dtos/paginated-result.interface";
+import { ResourceNotFoundException } from "../../common/exceptions/business.exception";
 import { PrismaService } from "../prisma/prisma.service";
+import { NOTIFICATIONS_DEFAULT_LIMIT } from "./dtos/notifications-query.dto";
 import {
   NOTIFICATION_PREFERENCE_DEFAULTS,
   type NotificationPreferencesResponse,
 } from "./notification-preferences.constants";
 import { UpdateNotificationPreferencesDto } from "./dtos/update-notification-preferences.dto";
+import {
+  CustomerNotificationResponse,
+  serializeCustomerNotification,
+} from "./notification.serializer";
+import { isWebPushConfigured } from "../../config/vapid.config";
 
-/** Flip when push/email delivery providers are wired. Preferences are stored regardless. */
-const PUSH_DELIVERY_SUPPORTED = false;
+/** Capability flag — VAPID must be configured for push delivery. */
+const PUSH_DELIVERY_SUPPORTED = isWebPushConfigured();
 const EMAIL_DELIVERY_SUPPORTED = false;
 const DELIVERY_SCHEDULING_SUPPORTED = false;
 
@@ -43,6 +55,89 @@ export class NotificationsService {
     return this.toResponse(updated);
   }
 
+  async findAllForCustomer(
+    userId: string,
+    page = 1,
+    limit = NOTIFICATIONS_DEFAULT_LIMIT,
+  ): Promise<PaginatedResult<CustomerNotificationResponse>> {
+    const pageNumber = Math.max(page, 1);
+    const pageSize = clampPageLimit(limit, NOTIFICATIONS_DEFAULT_LIMIT);
+    const skip = paginateSkip(pageNumber, pageSize);
+    const where = {
+      userId,
+      inAppEligible: true,
+    };
+
+    const [rows, total] = await Promise.all([
+      this.prisma.customerNotification.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: pageSize,
+      }),
+      this.prisma.customerNotification.count({ where }),
+    ]);
+
+    return {
+      items: rows.map(serializeCustomerNotification),
+      total,
+      page: pageNumber,
+      pageSize,
+    };
+  }
+
+  async getUnreadCount(userId: string): Promise<{ count: number }> {
+    const count = await this.prisma.customerNotification.count({
+      where: {
+        userId,
+        inAppEligible: true,
+        readAt: null,
+      },
+    });
+
+    return { count };
+  }
+
+  async markRead(
+    userId: string,
+    notificationId: string,
+  ): Promise<CustomerNotificationResponse> {
+    const row = await this.prisma.customerNotification.findFirst({
+      where: {
+        id: notificationId,
+        userId,
+        inAppEligible: true,
+      },
+    });
+
+    if (!row) {
+      throw new ResourceNotFoundException("Notification", notificationId);
+    }
+
+    const updated =
+      row.readAt !== null
+        ? row
+        : await this.prisma.customerNotification.update({
+            where: { id: row.id },
+            data: { readAt: new Date() },
+          });
+
+    return serializeCustomerNotification(updated);
+  }
+
+  async markAllRead(userId: string): Promise<{ updated: number }> {
+    const result = await this.prisma.customerNotification.updateMany({
+      where: {
+        userId,
+        inAppEligible: true,
+        readAt: null,
+      },
+      data: { readAt: new Date() },
+    });
+
+    return { updated: result.count };
+  }
+
   private async ensurePreferences(userId: string) {
     return this.prisma.customerNotificationPreferences.upsert({
       where: { userId },
@@ -55,6 +150,7 @@ export class NotificationsService {
   }
 
   private toResponse(row: {
+    inAppEnabled: boolean;
     orderUpdates: boolean;
     freeDelivery: boolean;
     favorites: boolean;
@@ -70,6 +166,7 @@ export class NotificationsService {
     updatedAt: Date;
   }): NotificationPreferencesResponse {
     return {
+      inAppEnabled: row.inAppEnabled,
       orderUpdates: row.orderUpdates,
       freeDelivery: row.freeDelivery,
       favorites: row.favorites,

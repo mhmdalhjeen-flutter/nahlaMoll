@@ -9,15 +9,21 @@ import { ErrorState } from '@/components/ui/EmptyState';
 import { storeApi } from '@/lib/store-api';
 import { NOTIFICATIONS_API_ENABLED } from '@/lib/notifications-config';
 import {
-  countUnread,
+  DEFAULT_NOTIFICATIONS_LIMIT,
+  DEFAULT_NOTIFICATIONS_PAGE,
   getNotificationHref,
   groupNotificationsByDay,
+  NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY,
+  notificationsListQueryKey,
+  patchNotificationListAllRead,
+  patchNotificationListRead,
 } from '@/lib/notifications';
-import type { CustomerNotification } from '@/lib/types';
+import type { CustomerNotification, NotificationUnreadCount, PaginatedList } from '@/lib/types';
 import { NotificationGroup, NotificationItem } from '@/components/notifications/NotificationItem';
 import { NotificationsPageSkeleton } from '@/components/notifications/NotificationsPageSkeleton';
 import { cn, getErrorMessage } from '@/lib/utils';
 import { useToastStore } from '@/stores/toast-store';
+import { useAuthStore } from '@/stores/auth-store';
 
 export function NotificationsPageContent() {
   return (
@@ -31,6 +37,15 @@ function NotificationsInbox() {
   const router = useRouter();
   const qc = useQueryClient();
   const toast = useToastStore((s) => s.show);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
+  const listQueryKey = notificationsListQueryKey(
+    DEFAULT_NOTIFICATIONS_PAGE,
+    DEFAULT_NOTIFICATIONS_LIMIT,
+  );
+
+  const notificationsEnabled =
+    NOTIFICATIONS_API_ENABLED && isAuthenticated;
 
   const {
     data,
@@ -39,38 +54,106 @@ function NotificationsInbox() {
     error,
     refetch,
   } = useQuery({
-    queryKey: ['notifications'],
-    queryFn: storeApi.getNotifications,
-    enabled: NOTIFICATIONS_API_ENABLED,
+    queryKey: listQueryKey,
+    queryFn: () =>
+      storeApi.getNotifications({
+        page: DEFAULT_NOTIFICATIONS_PAGE,
+        limit: DEFAULT_NOTIFICATIONS_LIMIT,
+      }),
+    enabled: notificationsEnabled,
+    staleTime: 60_000,
     retry: false,
   });
 
-  const notifications = data ?? [];
-  const unreadCount = countUnread(notifications);
+  const { data: unreadData } = useQuery({
+    queryKey: NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY,
+    queryFn: storeApi.getNotificationUnreadCount,
+    enabled: notificationsEnabled,
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  const notifications = data?.items ?? [];
+  const unreadCount = unreadData?.count ?? 0;
   const { today, earlier } = groupNotificationsByDay(notifications);
 
   const markRead = useMutation({
     mutationFn: (id: string) => storeApi.markNotificationRead(id),
-    onSuccess: () => {
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: listQueryKey });
+      await qc.cancelQueries({ queryKey: NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY });
+
+      const previousList = qc.getQueryData<PaginatedList<CustomerNotification>>(listQueryKey);
+      const previousUnread = qc.getQueryData<NotificationUnreadCount>(
+        NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY,
+      );
+
+      qc.setQueryData(
+        listQueryKey,
+        patchNotificationListRead(previousList, id),
+      );
+
+      const wasUnread = previousList?.items.some((n) => n.id === id && !n.isRead);
+      if (wasUnread && previousUnread && previousUnread.count > 0) {
+        qc.setQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, {
+          count: previousUnread.count - 1,
+        });
+      }
+
+      return { previousList, previousUnread };
+    },
+    onError: (_err, _id, context) => {
+      if (context?.previousList) {
+        qc.setQueryData(listQueryKey, context.previousList);
+      }
+      if (context?.previousUnread) {
+        qc.setQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, context.previousUnread);
+      }
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ['notifications'] });
-      qc.invalidateQueries({ queryKey: ['notifications-unread-count'] });
+      qc.invalidateQueries({ queryKey: NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY });
     },
   });
 
   const markAllRead = useMutation({
     mutationFn: () => storeApi.markAllNotificationsRead(),
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: listQueryKey });
+      await qc.cancelQueries({ queryKey: NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY });
+
+      const previousList = qc.getQueryData<PaginatedList<CustomerNotification>>(listQueryKey);
+      const previousUnread = qc.getQueryData<NotificationUnreadCount>(
+        NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY,
+      );
+
+      qc.setQueryData(listQueryKey, patchNotificationListAllRead(previousList));
+      qc.setQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, { count: 0 });
+
+      return { previousList, previousUnread };
+    },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['notifications'] });
-      qc.invalidateQueries({ queryKey: ['notifications-unread-count'] });
       toast('تم تحديد جميع الإشعارات كمقروءة', 'success');
     },
-    onError: (e) => toast(getErrorMessage(e), 'error'),
+    onError: (e, _vars, context) => {
+      if (context?.previousList) {
+        qc.setQueryData(listQueryKey, context.previousList);
+      }
+      if (context?.previousUnread) {
+        qc.setQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, context.previousUnread);
+      }
+      toast(getErrorMessage(e), 'error');
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['notifications'] });
+      qc.invalidateQueries({ queryKey: NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY });
+    },
   });
 
   const handleOpen = async (notification: CustomerNotification) => {
     const href = getNotificationHref(notification);
 
-    if (NOTIFICATIONS_API_ENABLED && !notification.isRead) {
+    if (notificationsEnabled && !notification.isRead) {
       try {
         await markRead.mutateAsync(notification.id);
       } catch {
@@ -80,7 +163,6 @@ function NotificationsInbox() {
 
     if (href) {
       router.push(href);
-      return;
     }
   };
 
@@ -93,7 +175,7 @@ function NotificationsInbox() {
   };
 
   const showMarkAll =
-    NOTIFICATIONS_API_ENABLED && unreadCount > 0 && !markAllRead.isPending;
+    notificationsEnabled && unreadCount > 0 && !markAllRead.isPending;
 
   return (
     <div className="container mx-auto px-4 py-5 pb-24 max-w-lg">
@@ -116,7 +198,7 @@ function NotificationsInbox() {
           </h1>
         </div>
 
-        {NOTIFICATIONS_API_ENABLED && (
+        {notificationsEnabled && (
           <button
             type="button"
             disabled={!showMarkAll}

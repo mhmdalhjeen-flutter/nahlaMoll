@@ -143,7 +143,8 @@ export const storeApi = {
     apiPut<User>('/users/profile', data),
 
   // Notifications (requires backend — see NOTIFICATIONS_API_ENABLED)
-  getNotifications: () => apiGet<CustomerNotification[]>('/notifications'),
+  getNotifications: (params?: { page?: number; limit?: number }) =>
+    apiGet<PaginatedList<CustomerNotification>>('/notifications', params),
   getNotificationUnreadCount: () => apiGet<NotificationUnreadCount>('/notifications/unread-count'),
   markNotificationRead: (id: string) => apiPost<CustomerNotification>(`/notifications/${id}/read`),
   markAllNotificationsRead: () => apiPost<{ updated: number }>('/notifications/read-all'),

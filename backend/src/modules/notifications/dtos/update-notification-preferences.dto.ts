@@ -6,6 +6,11 @@ export class UpdateNotificationPreferencesDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
+  inAppEnabled?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
   orderUpdates?: boolean;
 
   @ApiPropertyOptional()

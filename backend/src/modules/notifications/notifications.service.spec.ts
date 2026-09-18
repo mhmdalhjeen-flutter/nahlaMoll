@@ -26,6 +26,7 @@ describe("NotificationsService", () => {
 
   it("creates defaults on first read without overwriting existing rows", async () => {
     mockPrisma.customerNotificationPreferences.upsert.mockResolvedValue({
+      inAppEnabled: true,
       orderUpdates: true,
       freeDelivery: true,
       favorites: false,
@@ -58,6 +59,7 @@ describe("NotificationsService", () => {
   it("updates only provided preference fields for the authenticated user", async () => {
     mockPrisma.customerNotificationPreferences.upsert.mockResolvedValue({});
     mockPrisma.customerNotificationPreferences.update.mockResolvedValue({
+      inAppEnabled: true,
       orderUpdates: true,
       freeDelivery: false,
       favorites: true,

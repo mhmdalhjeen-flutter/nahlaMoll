@@ -10,6 +10,7 @@ import { CartService } from "../cart/cart.service";
 import { DeliveryService } from "../delivery/delivery.service";
 import { SettingsService } from "../settings/settings.service";
 import { CustomerEventsService } from "../customer-events/customer-events.service";
+import { NotificationEventService } from "../notifications/notification-event.service";
 import { ProductsService } from "../products/products.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { createMockPrismaService } from "../prisma/prisma.service.mock";
@@ -25,6 +26,7 @@ const mockPrisma = createMockPrismaService();
 describe("OrdersService", () => {
   let service: OrdersService;
   let deliveryService: DeliveryService;
+  let notificationEventService: NotificationEventService;
 
   const userId = "user-1";
   const areaId = "area-1";
@@ -96,11 +98,18 @@ describe("OrdersService", () => {
           provide: CustomerEventsService,
           useValue: { recordInternal: jest.fn() },
         },
+        {
+          provide: NotificationEventService,
+          useValue: { emitOrderStatusChange: jest.fn().mockResolvedValue(null) },
+        },
       ],
     }).compile();
 
     service = module.get<OrdersService>(OrdersService);
     deliveryService = module.get<DeliveryService>(DeliveryService);
+    notificationEventService = module.get<NotificationEventService>(
+      NotificationEventService,
+    );
 
     jest.clearAllMocks();
 
@@ -566,15 +575,21 @@ describe("OrdersService", () => {
   });
 
   describe("updateStatusAdmin", () => {
+    const baseOrder = {
+      id: "order-1",
+      customerId: "customer-1",
+      orderNumber: "1042",
+    };
+
     it("marks COD payment verified when delivered", async () => {
       mockPrisma.order.findUnique.mockResolvedValue({
-        id: "order-1",
+        ...baseOrder,
         status: OrderStatus.SHIPPED,
         paymentStatus: PaymentStatus.PENDING,
         paymentReference: null,
       });
       mockPrisma.order.update.mockResolvedValue({
-        id: "order-1",
+        ...baseOrder,
         status: OrderStatus.DELIVERED,
         paymentStatus: PaymentStatus.VERIFIED,
       });
@@ -596,13 +611,13 @@ describe("OrdersService", () => {
 
     it("does not auto-verify electronic payment on deliver", async () => {
       mockPrisma.order.findUnique.mockResolvedValue({
-        id: "order-1",
+        ...baseOrder,
         status: OrderStatus.SHIPPED,
         paymentStatus: PaymentStatus.SUBMITTED,
         paymentReference: "Ahmed",
       });
       mockPrisma.order.update.mockResolvedValue({
-        id: "order-1",
+        ...baseOrder,
         status: OrderStatus.DELIVERED,
         paymentStatus: PaymentStatus.SUBMITTED,
       });
@@ -620,6 +635,88 @@ describe("OrdersService", () => {
       );
       const updateCall = mockPrisma.order.update.mock.calls[0][0];
       expect(updateCall.data.paymentStatus).toBeUndefined();
+    });
+
+    it.each([
+      [OrderStatus.PAYMENT_VERIFIED, OrderStatus.CONFIRMED],
+      [OrderStatus.CONFIRMED, OrderStatus.SHIPPED],
+      [OrderStatus.SHIPPED, OrderStatus.DELIVERED],
+      [OrderStatus.PAYMENT_SUBMITTED, OrderStatus.PAYMENT_REJECTED],
+      [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
+    ])(
+      "emits notification event after %s → %s transition",
+      async (previousStatus, newStatus) => {
+        mockPrisma.order.findUnique.mockResolvedValue({
+          ...baseOrder,
+          status: previousStatus,
+          paymentStatus: PaymentStatus.PENDING,
+          paymentReference: null,
+        });
+        mockPrisma.order.update.mockResolvedValue({
+          ...baseOrder,
+          status: newStatus,
+        });
+
+        await service.updateStatusAdmin("order-1", { status: newStatus });
+
+        expect(
+          notificationEventService.emitOrderStatusChange,
+        ).toHaveBeenCalledWith({
+          userId: "customer-1",
+          orderId: "order-1",
+          orderNumber: "1042",
+          previousStatus,
+          newStatus,
+        });
+      },
+    );
+
+    it("does not block order update on notification emission (fire-and-forget)", async () => {
+      mockPrisma.order.findUnique.mockResolvedValue({
+        ...baseOrder,
+        status: OrderStatus.PAYMENT_VERIFIED,
+        paymentStatus: PaymentStatus.VERIFIED,
+        paymentReference: "Ahmed",
+      });
+      mockPrisma.order.update.mockResolvedValue({
+        ...baseOrder,
+        status: OrderStatus.CONFIRMED,
+      });
+
+      const result = await service.updateStatusAdmin("order-1", {
+        status: OrderStatus.CONFIRMED,
+      });
+
+      expect(result.status).toBe(OrderStatus.CONFIRMED);
+      expect(
+        notificationEventService.emitOrderStatusChange,
+      ).toHaveBeenCalledTimes(1);
+    });
+
+    it("still calls notification emitter for PROCESSING transitions", async () => {
+      mockPrisma.order.findUnique.mockResolvedValue({
+        ...baseOrder,
+        status: OrderStatus.CONFIRMED,
+        paymentStatus: PaymentStatus.VERIFIED,
+        paymentReference: "Ahmed",
+      });
+      mockPrisma.order.update.mockResolvedValue({
+        ...baseOrder,
+        status: OrderStatus.PROCESSING,
+      });
+
+      await service.updateStatusAdmin("order-1", {
+        status: OrderStatus.PROCESSING,
+      });
+
+      expect(
+        notificationEventService.emitOrderStatusChange,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          previousStatus: OrderStatus.CONFIRMED,
+          newStatus: OrderStatus.PROCESSING,
+        }),
+      );
     });
   });
 });

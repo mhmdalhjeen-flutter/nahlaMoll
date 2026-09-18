@@ -371,6 +371,7 @@ export interface NotificationUnreadCount {
 }
 
 export interface CustomerNotificationPreferences {
+  inAppEnabled: boolean;
   orderUpdates: boolean;
   freeDelivery: boolean;
   favorites: boolean;
@@ -394,6 +395,7 @@ export interface CustomerNotificationPreferences {
 export type NotificationPreferencePatch = Partial<
   Pick<
     CustomerNotificationPreferences,
+    | 'inAppEnabled'
     | 'orderUpdates'
     | 'freeDelivery'
     | 'favorites'

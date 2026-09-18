@@ -10,6 +10,12 @@ import {
   Serwist,
   StaleWhileRevalidate,
 } from "serwist";
+import {
+  buildShowNotificationOptions,
+  openNotificationTarget,
+  parsePushPayloadText,
+  type PushNotificationData,
+} from "./lib/sw-push";
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -102,3 +108,44 @@ const serwist = new Serwist({
 });
 
 serwist.addEventListeners();
+
+self.addEventListener("push", (event) => {
+  event.waitUntil(handlePushEvent(event));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(handleNotificationClickEvent(event));
+});
+
+async function handlePushEvent(event: PushEvent): Promise<void> {
+  try {
+    const rawText = event.data ? await event.data.text() : null;
+    const payload = parsePushPayloadText(rawText);
+    if (!payload) {
+      return;
+    }
+
+    await self.registration.showNotification(
+      payload.title,
+      buildShowNotificationOptions(payload),
+    );
+  } catch {
+    // Push handling must never break existing PWA behavior.
+  }
+}
+
+async function handleNotificationClickEvent(
+  event: NotificationEvent,
+): Promise<void> {
+  try {
+    const data = event.notification.data as PushNotificationData | undefined;
+    await openNotificationTarget({
+      clients: self.clients,
+      origin: self.location.origin,
+      url: data?.url,
+    });
+  } catch {
+    // Notification click handling must never break existing PWA behavior.
+  }
+}

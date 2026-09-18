@@ -1,4 +1,5 @@
 export const NOTIFICATION_PREFERENCE_DEFAULTS = {
+  inAppEnabled: true,
   orderUpdates: true,
   freeDelivery: true,
   favorites: false,
@@ -20,6 +21,7 @@ export function isValidTime24h(value: string): boolean {
 }
 
 export type NotificationPreferenceKey =
+  | "inAppEnabled"
   | "orderUpdates"
   | "freeDelivery"
   | "favorites"
@@ -34,6 +36,7 @@ export type NotificationPreferenceKey =
   | "doNotDisturbUntil";
 
 export interface NotificationPreferencesResponse {
+  inAppEnabled: boolean;
   orderUpdates: boolean;
   freeDelivery: boolean;
   favorites: boolean;

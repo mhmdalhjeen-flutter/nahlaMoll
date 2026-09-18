@@ -136,6 +136,8 @@ model User {
   storeWaitRequests StoreWaitRequest[]
   customerInteractions CustomerInteraction[]
   notificationPreferences CustomerNotificationPreferences?
+  notifications         CustomerNotification[]
+  pushSubscriptions     PushSubscription[]
 
   @@index([phoneNumber])
   @@index([email])
@@ -405,12 +407,88 @@ model CustomerInteraction {
   @@index([productId])
 }
 
+// ============================================
+// CUSTOMER NOTIFICATIONS
+// ============================================
+
+enum NotificationEventType {
+  ORDER_CONFIRMED
+  ORDER_SHIPPED
+  ORDER_DELIVERED
+  ORDER_REJECTED
+  SUPPORT_REPLY
+  NEW_ANNOUNCEMENT
+}
+
+enum NotificationTargetType {
+  ORDER
+  PRODUCT
+  OFFER
+  SUPPORT
+  ANNOUNCEMENT
+  NONE
+}
+
+model CustomerNotification {
+  id              String                 @id @default(cuid())
+  userId          String
+  user            User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  eventType       NotificationEventType
+  eventKey        String
+
+  title           String
+  message         String
+
+  targetType      NotificationTargetType
+  targetId        String?
+
+  metadata        Json?
+
+  readAt          DateTime?
+
+  inAppEligible   Boolean                @default(true)
+  pushEligible    Boolean                @default(false)
+
+  pushAttemptedAt DateTime?
+  pushDeliveredAt DateTime?
+  pushError       String?
+
+  createdAt       DateTime               @default(now())
+
+  @@unique([userId, eventKey])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, readAt])
+}
+
+model PushSubscription {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  endpoint      String
+  p256dh        String
+  auth          String
+
+  userAgent     String?
+  createdAt     DateTime  @default(now())
+  lastUsedAt    DateTime?
+  invalidatedAt DateTime?
+
+  @@unique([endpoint])
+  @@index([userId])
+}
+
 // Per-customer notification delivery preferences (future delivery engine reads these).
+// inAppEnabled = master switch for persistent in-app notifications.
+// pushEnabled = master switch for external Web Push.
+// Category preferences remain independent content filters.
 model CustomerNotificationPreferences {
   id                      String   @id @default(cuid())
   userId                  String   @unique
   user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  inAppEnabled            Boolean  @default(true)
   orderUpdates            Boolean  @default(true)
   freeDelivery            Boolean  @default(true)
   favorites               Boolean  @default(false)

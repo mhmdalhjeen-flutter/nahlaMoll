@@ -12,6 +12,7 @@ import { CartService } from "../cart/cart.service";
 import { DeliveryService } from "../delivery/delivery.service";
 import { SettingsService } from "../settings/settings.service";
 import { CustomerEventsService } from "../customer-events/customer-events.service";
+import { NotificationEventService } from "../notifications/notification-event.service";
 import { CUSTOMER_EVENT_SOURCES } from "../customer-events/customer-events.constants";
 import { CreateOrderDto } from "./dtos/create-order.dto";
 import { UpdateOrderStatusDto } from "./dtos/update-order-status.dto";
@@ -60,6 +61,7 @@ export class OrdersService {
     private deliveryService: DeliveryService,
     private settingsService: SettingsService,
     private customerEventsService: CustomerEventsService,
+    private notificationEventService: NotificationEventService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto) {
@@ -254,10 +256,20 @@ export class OrdersService {
       data.paymentStatus = PaymentStatus.VERIFIED;
     }
 
+    const previousStatus = order.status;
+
     const updated = await this.prisma.order.update({
       where: { id: orderId },
       data,
       include: orderInclude,
+    });
+
+    void this.notificationEventService.emitOrderStatusChange({
+      userId: updated.customerId,
+      orderId: updated.id,
+      orderNumber: updated.orderNumber,
+      previousStatus,
+      newStatus: updated.status,
     });
 
     if (dto.status === OrderStatus.DELIVERED) {

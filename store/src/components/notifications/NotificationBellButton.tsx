@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { storeApi } from '@/lib/store-api';
 import { NOTIFICATIONS_API_ENABLED } from '@/lib/notifications-config';
+import { NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY } from '@/lib/notifications';
 import { usePendingAuthStore } from '@/stores/pending-auth-store';
 
 interface NotificationBellButtonProps {
@@ -24,7 +25,7 @@ export function NotificationBellButton({
   const requestAuth = usePendingAuthStore((s) => s.requestAuth);
 
   const { data: unreadData } = useQuery({
-    queryKey: ['notifications-unread-count'],
+    queryKey: NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY,
     queryFn: storeApi.getNotificationUnreadCount,
     enabled: NOTIFICATIONS_API_ENABLED && isAuthenticated,
     staleTime: 60_000,

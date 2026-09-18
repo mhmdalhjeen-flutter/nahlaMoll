@@ -19,6 +19,7 @@ import {
   User,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { clearNotificationQueries } from '@/lib/notifications';
 
 export default function ProfilePage() {
   return (
@@ -124,6 +125,7 @@ function ProfileContent() {
           variant="danger"
           className="w-full min-h-[48px]"
           onClick={() => {
+            clearNotificationQueries(qc);
             logout();
             toast('تم تسجيل الخروج', 'info');
           }}
