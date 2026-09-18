@@ -1,7 +1,5 @@
-# Cloudflare Pages — Store frontend
-# Local preview only (`npm run pages:preview`). Git deploy settings live in the dashboard.
-# Do not add pages_build_output_dir here — it makes Wrangler the deployment source of truth
-# and suppresses dashboard build environment variables.
 name = "store-frontend"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
+
+pages_build_output_dir = ".vercel/output/static"
